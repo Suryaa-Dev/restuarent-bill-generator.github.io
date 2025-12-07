@@ -368,4 +368,3 @@ const menuItems = [
 ];
 
 export default menuItems;
-└── App.jsx
