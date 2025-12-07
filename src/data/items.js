@@ -1,8 +1,37 @@
+// Import all images at the top
+import dabeliImg from '../assets/Dabeli.jpeg';
+import pavbhajiImg from '../assets/Pavbhaji.jpeg';
+import expavImg from '../assets/expav.jpg';
+import bhajiImg from '../assets/bhaji.jpeg';
+import masalaPavImg from '../assets/masala-pav.jpg';
+import manchImg from '../assets/Manch.jpeg';
+import tManchImg from '../assets/TManch.jpg';
+import vegchilliImg from '../assets/vegchilli.jpeg';
+import gManchImg from '../assets/GManch.jpeg';
+import sManchImg from '../assets/SManch.jpg';
+import riceImg from '../assets/Rice.jpeg';
+import tRiceImg from '../assets/TRice.jpeg';
+import sRiceImg from '../assets/SRice.jpeg';
+import combinationImg from '../assets/combination.jpg';
+import noodlesImg from '../assets/Noodles.jpeg';
+import tNoodlesImg from '../assets/TNoodles.jpeg';
+import sNoodlesImg from '../assets/SNoodles.jpeg';
+import pManchImg from '../assets/PManch.jpeg';
+import pChilliImg from '../assets/PChilli.jpeg';
+import p65Img from '../assets/P65.jpeg';
+import soupImg from '../assets/soup.jpeg';
+import tSoupImg from '../assets/Tsoup.jpeg';
+import chineseBhelImg from '../assets/ChineseBhel.jpeg';
+import frenchFriesImg from '../assets/frenchfries.jpeg';
+import bottleImg from '../assets/bottle.jpg';
+import coldDrinksImg from '../assets/Colddrinks.jpeg';
+import amulImg from '../assets/amul.jpeg';
+
 const menuItems = [
   {
     name: "Dabeli",
     category: "Dabeli & Pavbhaji",
-    img: "src/assets/Dabeli.jpeg",
+    img: dabeliImg,
     options: [
       { portion: "Single", price: 25 },
       { portion: "Double", price: 50 }
@@ -11,13 +40,13 @@ const menuItems = [
   {
     name: "Pavbhaji",
     category: "Dabeli & Pavbhaji",
-    img: "/src/assets//Pavbhaji.jpeg",
+    img: pavbhajiImg,
     options: [{ portion: "Plate", price: 70 }]
   },
   {
     name: "Extra Pav",
     category: "Dabeli & Pavbhaji",
-    img: "/src/assets//expav.jpg",
+    img: expavImg,
     options: [
       { portion: "Jodi", price: 20 },
       { portion: "Single", price: 10 }
@@ -26,19 +55,19 @@ const menuItems = [
   {
     name: "Only Bhaji",
     category: "Dabeli & Pavbhaji",
-    img: "/src/assets//bhaji.jpeg",
+    img: bhajiImg,
     options: [{ portion: "Plate", price: 60 }]
   },
   {
     name: "Masala Pav",
     category: "Dabeli & Pavbhaji",
-    img: "/src/assets//masala-pav.jpg",
+    img: masalaPavImg,
     options: [{ portion: "Plate", price: 80 }]
   },
   {
     name: "Manchurian",
     category: "Manchurian",
-    img: "/src/assets//Manch.jpeg",
+    img: manchImg,
     options: [
       { portion: "Half", price: 60 },
       { portion: "Full", price: 120 }
@@ -47,7 +76,7 @@ const menuItems = [
   {
     name: "Crispy Veg",
     category: "Manchurian",
-    img: "/src/assets//Manch.jpeg",
+    img: manchImg,
     options: [
       { portion: "Half", price: 70 },
       { portion: "Full", price: 140 }
@@ -56,7 +85,7 @@ const menuItems = [
   {
     name: "Tadka Manchuri",
     category: "Manchurian",
-    img: "/src/assets//TManch.jpg",
+    img: tManchImg,
     options: [
       { portion: "Half", price: 70 },
       { portion: "Full", price: 140 }
@@ -65,7 +94,7 @@ const menuItems = [
   {
     name: "Veg 65/Chilli",
     category: "Manchurian",
-    img: "/src/assets//vegchilli.jpeg",
+    img: vegchilliImg,
     options: [
       { portion: "Half", price: 70 },
       { portion: "Full", price: 140 }
@@ -74,7 +103,7 @@ const menuItems = [
   {
     name: "Gravy Manchuri",
     category: "Manchurian",
-    img: "/src/assets//GManch.jpeg",
+    img: gManchImg,
     options: [
       { portion: "Half", price: 80 },
       { portion: "Full", price: 160 }
@@ -83,7 +112,7 @@ const menuItems = [
   {
     name: "Sukka Manchuri",
     category: "Manchurian",
-    img: "/src/assets//SManch.jpg",
+    img: sManchImg,
     options: [
       { portion: "Half", price: 50 },
       { portion: "Full", price: 100 }
@@ -92,7 +121,7 @@ const menuItems = [
   {
     name: "Rice",
     category: "Rice",
-    img: "/src/assets//Rice.jpeg",
+    img: riceImg,
     options: [
       { portion: "Half", price: 60 },
       { portion: "Full", price: 120 }
@@ -101,7 +130,7 @@ const menuItems = [
   {
     name: "Triple Rice",
     category: "Rice",
-    img: "/src/assets//TRice.jpeg",
+    img: tRiceImg,
     options: [
       { portion: "Half", price: 100 },
       { portion: "Full", price: 200 }
@@ -110,7 +139,7 @@ const menuItems = [
   {
     name: "Singapur Rice",
     category: "Rice",
-    img: "/src/assets//SRice.jpeg",
+    img: sRiceImg,
     options: [
       { portion: "Half", price: 80 },
       { portion: "Full", price: 160 }
@@ -119,7 +148,7 @@ const menuItems = [
   {
     name: "Hongkong Rice",
     category: "Rice",
-    img: "/src/assets//Rice.jpeg",
+    img: riceImg,
     options: [
       { portion: "Half", price: 80 },
       { portion: "Full", price: 160 }
@@ -128,7 +157,7 @@ const menuItems = [
   {
     name: "Combination",
     category: "Rice",
-    img: "/src/assets//combination.jpg",
+    img: combinationImg,
     options: [
       { portion: "Half", price: 70 },
       { portion: "Full", price: 140 }
@@ -137,7 +166,7 @@ const menuItems = [
   {
     name: "Noodles",
     category: "Noodles",
-    img: "/src/assets//Noodles.jpeg",
+    img: noodlesImg,
     options: [
       { portion: "Half", price: 70 },
       { portion: "Full", price: 140 }
@@ -146,7 +175,7 @@ const menuItems = [
   {
     name: "Triple Noodles",
     category: "Noodles",
-    img: "/src/assets//TNoodles.jpeg",
+    img: tNoodlesImg,
     options: [
       { portion: "Half", price: 100 },
       { portion: "Full", price: 200 }
@@ -155,7 +184,7 @@ const menuItems = [
   {
     name: "Combination",
     category: "Noodles",
-    img: "/src/assets//combination.jpg",
+    img: combinationImg,
     options: [
       { portion: "Half", price: 70 },
       { portion: "Full", price: 140 }
@@ -164,7 +193,7 @@ const menuItems = [
   {
     name: "Singapur Noodles",
     category: "Noodles",
-    img: "/src/assets//SNoodles.jpeg",
+    img: sNoodlesImg,
     options: [
       { portion: "Half", price: 80 },
       { portion: "Full", price: 160 }
@@ -173,7 +202,7 @@ const menuItems = [
   {
     name: "Hongkong Noodles",
     category: "Noodles",
-    img: "/src/assets//Noodles.jpeg",
+    img: noodlesImg,
     options: [
       { portion: "Half", price: 80 },
       { portion: "Full", price: 160 }
@@ -182,7 +211,7 @@ const menuItems = [
   {
     name: "Paneer Manchuri",
     category: "Paneer",
-    img: "/src/assets//PManch.jpeg",
+    img: pManchImg,
     options: [
       { portion: "Half", price: 90 },
       { portion: "Full", price: 180 }
@@ -191,7 +220,7 @@ const menuItems = [
   {
     name: "Paneer Chilli",
     category: "Paneer",
-    img: "/src/assets//PChilli.jpeg",
+    img: pChilliImg,
     options: [
       { portion: "Half", price: 100 },
       { portion: "Full", price: 200 }
@@ -200,7 +229,7 @@ const menuItems = [
   {
     name: "Paneer 65",
     category: "Paneer",
-    img: "/src/assets//P65.jpeg",
+    img: p65Img,
     options: [
       { portion: "Half", price: 100 },
       { portion: "Full", price: 200 }
@@ -209,7 +238,7 @@ const menuItems = [
   {
     name: "Paneer Tadka",
     category: "Paneer",
-    img: "/src/assets//PManch.jpeg",
+    img: pManchImg,
     options: [
       { portion: "Half", price: 100 },
       { portion: "Full", price: 200 }
@@ -218,7 +247,7 @@ const menuItems = [
   {
     name: "Paneer Rice",
     category: "Rice",
-    img: "/src/assets//Rice.jpeg",
+    img: riceImg,
     options: [
       { portion: "Half", price: 90 },
       { portion: "Full", price: 180 }
@@ -227,7 +256,7 @@ const menuItems = [
   {
     name: "Paneer Noodles",
     category: "Noodles",
-    img: "/src/assets//Noodles.jpeg",
+    img: noodlesImg,
     options: [
       { portion: "Half", price: 90 },
       { portion: "Full", price: 180 }
@@ -236,7 +265,7 @@ const menuItems = [
   {
     name: "Paneer Triple",
     category: "Paneer",
-    img: "/src/assets//TRice.jpeg",
+    img: tRiceImg,
     options: [
       { portion: "Half", price: 140 },
       { portion: "Full", price: 280 }
@@ -245,7 +274,7 @@ const menuItems = [
   {
     name: "Paneer Singapur Rice",
     category: "Paneer",
-    img: "/src/assets//SRice.jpeg",
+    img: sRiceImg,
     options: [
       { portion: "Half", price: 140 },
       { portion: "Full", price: 280 }
@@ -254,7 +283,7 @@ const menuItems = [
   {
     name: "Paneer Singapur Noodles",
     category: "Paneer",
-    img: "/src/assets//SNoodles.jpeg",
+    img: sNoodlesImg,
     options: [
       { portion: "Half", price: 140 },
       { portion: "Full", price: 280 }
@@ -263,7 +292,7 @@ const menuItems = [
   {
     name: "Soup",
     category: "Soup",
-    img: "/src/assets//soup.jpeg",
+    img: soupImg,
     options: [
       { portion: "Half", price: 50 },
       { portion: "Full", price: 100 }
@@ -272,25 +301,25 @@ const menuItems = [
   {
     name: "Tomato Soup",
     category: "Soup",
-    img: "/src/assets//Tsoup.jpeg",
+    img: tSoupImg,
     options: [{ portion: "Full", price: 100 }]
   },
   {
     name: "Chinese Bhel",
     category: "Soup",
-    img: "/src/assets//ChineseBhel.jpeg",
+    img: chineseBhelImg,
     options: [{ portion: "Full", price: 120 }]
   },
   {
     name: "French Fries",
     category: "Soup",
-    img: "/src/assets//frenchfries.jpeg",
+    img: frenchFriesImg,
     options: [{ portion: "Full", price: 100 }]
   },
   {
     name: "Water Bottle",
     category: "Cold Drinks",
-    img: "/src/assets//bottle.jpg",
+    img: bottleImg,
     options: [
       { portion: "500ML", price: 10 },
       { portion: "1LTR", price: 20 }
@@ -299,25 +328,25 @@ const menuItems = [
   {
     name: "Cold Drinks",
     category: "Cold Drinks",
-    img: "/src/assets//Colddrinks.jpeg",
+    img: coldDrinksImg,
     options: [{ portion: "10Rs", price: 10 }]
   },
   {
     name: "Cold Drinks(20RS)",
     category: "Cold Drinks",
-    img: "/src/assets//Colddrinks.jpeg",
+    img: coldDrinksImg,
     options: [{ portion: "20Rs", price: 20 }]
   },
   {
     name: "Cold Drinks",
     category: "Cold Drinks",
-    img: "/src/assets//Colddrinks.jpeg",
+    img: coldDrinksImg,
     options: [{ portion: "45Rs", price: 45 }]
   },
   {
     name: "Ice-cream",
     category: "Ice-cream",
-    img: "/src/assets//amul.jpeg",
+    img: amulImg,
     options: [
       { portion: "10", price: 10 },
       { portion: "1", price: 15 },
@@ -328,7 +357,7 @@ const menuItems = [
   {
     name: "Ice-cream",
     category: "Ice-cream",
-    img: "/src/assets//amul.jpeg",
+    img: amulImg,
     options: [
       { portion: "30", price: 30 },
       { portion: "5", price: 35 },
@@ -339,3 +368,4 @@ const menuItems = [
 ];
 
 export default menuItems;
+└── App.jsx
