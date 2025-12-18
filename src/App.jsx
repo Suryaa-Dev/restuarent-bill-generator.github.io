@@ -1,22 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Menu } from 'lucide-react';
+import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3 } from 'lucide-react';
 import { supabase } from './config/supabase';
 import menuItems from './data/items';
 
 
 // Header Component
-const Header = ({ onCartClick, cartItemCount }) => (
+const Header = ({ onCartClick, cartItemCount, currentTab }) => (
   <header className="sticky top-0 z-50 bg-orange-500 text-white py-3 px-4 shadow-lg">
     <div className="flex justify-between items-center">
       <h1 className="text-lg md:text-2xl font-bold">Anand Fast Food</h1>
-      <button onClick={onCartClick} className="relative md:hidden bg-orange-600 p-2 rounded-full">
-        <ShoppingCart size={24} />
-        {cartItemCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
-            {cartItemCount}
-          </span>
-        )}
-      </button>
+      {currentTab === 'home' && (
+        <button onClick={onCartClick} className="relative md:hidden bg-orange-600 p-2 rounded-full">
+          <ShoppingCart size={24} />
+          {cartItemCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+              {cartItemCount}
+            </span>
+          )}
+        </button>
+      )}
     </div>
   </header>
 );
@@ -83,7 +85,7 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
   const hasMultipleOptions = item.options.length > 1;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-60 md:h-[260px]">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-60 md:h-65">
       <div onClick={() => onAddItem(item.name, defaultOption.portion, defaultOption.price)} className="cursor-pointer flex-1 flex flex-col">
         <img src={item.img} alt={item.name} className="w-full h-28 md:h-32 object-cover shrink-0" />
         <div className="p-3 flex flex-col justify-between flex-1">
@@ -115,9 +117,9 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
   );
 };
 
-// Cart/Bill Drawer (Mobile)
+// Cart/Bill Drawer (Mobile) - Now reusable for both Home and All Tables tabs
 const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-50 z-50 md:hidden">
+  <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
     <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
       <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white rounded-t-3xl">
         <h2 className="text-xl font-bold">
@@ -184,7 +186,79 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
   </div>
 );
 
-// Desktop Sidebar Components (reused from before)
+// NEW: All Tables Grid Component
+const AllTablesGrid = ({ tables, bills, onTableClick }) => {
+  const getTableTotal = (tableNum) => {
+    const bill = bills[tableNum] || [];
+    return bill.reduce((sum, item) => sum + item.price * item.qty, 0);
+  };
+
+  const isTableEmpty = (tableNum) => {
+    const bill = bills[tableNum] || [];
+    return bill.length === 0;
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-white p-4">
+      <h2 className="text-xl font-bold text-gray-900 mb-4">All Tables</h2>
+      
+      <div className="grid grid-cols-3 gap-3">
+        {tables.map(num => {
+          const total = getTableTotal(num);
+          const empty = isTableEmpty(num);
+          
+          return (
+            <button
+              key={num}
+              onClick={() => onTableClick(num)}
+              className="aspect-square bg-gray-50 border-2 border-gray-200 rounded-xl p-3 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
+            >
+              <span className="text-lg font-bold text-gray-700 mb-2">T{num}</span>
+              {empty ? (
+                <span className="text-sm text-gray-400">—</span>
+              ) : (
+                <span className="text-xl font-bold text-orange-600">₹{total}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// NEW: Bottom Navigation Component
+const BottomNavigation = ({ activeTab, onTabChange }) => (
+  <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+    <div className="grid grid-cols-2">
+      <button
+        onClick={() => onTabChange('home')}
+        className={`flex flex-col items-center justify-center py-3 transition-colors ${
+          activeTab === 'home' 
+            ? 'text-orange-500 bg-orange-50' 
+            : 'text-gray-600'
+        }`}
+      >
+        <Home size={24} />
+        <span className="text-xs mt-1 font-medium">Home</span>
+      </button>
+      
+      <button
+        onClick={() => onTabChange('allTables')}
+        className={`flex flex-col items-center justify-center py-3 transition-colors ${
+          activeTab === 'allTables' 
+            ? 'text-orange-500 bg-orange-50' 
+            : 'text-gray-600'
+        }`}
+      >
+        <Grid3x3 size={24} />
+        <span className="text-xs mt-1 font-medium">All Tables</span>
+      </button>
+    </div>
+  </div>
+);
+
+// Desktop Sidebar Components
 const TableSelector = ({ tables, selectedTable, onSelectTable }) => (
   <div className="hidden md:block w-[15%] bg-gray-200 p-3 overflow-y-auto border-r border-gray-400">
     <div className="font-bold mb-3 text-gray-700 text-lg">Tables</div>
@@ -244,7 +318,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
               onChange={(e) => onChangeQuantity(idx, e.target.value)}
               className="w-14 px-2 py-1 text-right bg-gray-200 border border-gray-400 rounded text-sm"
             />
-            <span className="min-w-[60px] text-right font-bold text-gray-800">₹{item.price * item.qty}</span>
+            <span className="min-w-15 text-right font-bold text-gray-800">₹{item.price * item.qty}</span>
           </div>
         </div>
       ))}
@@ -272,13 +346,14 @@ export default function RestaurantBillGenerator() {
   const [showTableModal, setShowTableModal] = useState(false);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('home'); // NEW: Tab state
+  const [viewingTableFromAllTables, setViewingTableFromAllTables] = useState(null); // NEW: For All Tables drawer
 
   // Load bills from Supabase on mount
   useEffect(() => {
     loadBillsFromSupabase();
   }, []);
 
-  // Load all active bills from database
   const loadBillsFromSupabase = async () => {
     try {
       setLoading(true);
@@ -289,7 +364,6 @@ export default function RestaurantBillGenerator() {
 
       if (error) throw error;
 
-      // Convert database format to app format
       const loadedBills = {};
       tables.forEach(num => {
         const tableBill = data.find(b => b.table_number === num);
@@ -299,7 +373,6 @@ export default function RestaurantBillGenerator() {
       setBills(loadedBills);
     } catch (error) {
       console.error('Error loading bills:', error);
-      // Initialize empty bills if error
       const initialBills = {};
       tables.forEach(num => { initialBills[num] = []; });
       setBills(initialBills);
@@ -308,12 +381,10 @@ export default function RestaurantBillGenerator() {
     }
   };
 
-  // Save bill to Supabase
   const saveBillToSupabase = async (tableNumber, items) => {
     try {
       const total = items.reduce((sum, item) => sum + item.price * item.qty, 0);
 
-      // Check if bill exists for this table
       const { data: existing } = await supabase
         .from('bills')
         .select('id')
@@ -322,7 +393,6 @@ export default function RestaurantBillGenerator() {
         .single();
 
       if (existing) {
-        // Update existing bill
         const { error } = await supabase
           .from('bills')
           .update({
@@ -334,7 +404,6 @@ export default function RestaurantBillGenerator() {
 
         if (error) throw error;
       } else {
-        // Create new bill
         const { error } = await supabase
           .from('bills')
           .insert({
@@ -374,15 +443,15 @@ export default function RestaurantBillGenerator() {
     newBills[selectedTable] = bill;
     setBills(newBills);
 
-    // Save to Supabase
     await saveBillToSupabase(selectedTable, bill);
   };
 
   const changeQuantity = async (index, value) => {
-    if (!selectedTable) return;
+    const tableToUpdate = viewingTableFromAllTables || selectedTable;
+    if (!tableToUpdate) return;
 
     const newBills = { ...bills };
-    const bill = [...newBills[selectedTable]];
+    const bill = [...newBills[tableToUpdate]];
     const qty = parseInt(value);
 
     if (isNaN(qty) || qty <= 0) {
@@ -391,94 +460,103 @@ export default function RestaurantBillGenerator() {
       bill[index].qty = qty;
     }
 
-    newBills[selectedTable] = bill;
+    newBills[tableToUpdate] = bill;
     setBills(newBills);
 
-    // Save to Supabase
-    await saveBillToSupabase(selectedTable, bill);
+    await saveBillToSupabase(tableToUpdate, bill);
   };
 
   const clearBill = async () => {
-  if (!selectedTable) return;
-  
-  const billItems = bills[selectedTable];
-  if (!billItems || billItems.length === 0) {
-    alert('No items to clear');
-    return;
-  }
-
-  if (window.confirm(`Clear all items for Table ${selectedTable}?`)) {
-    try {
-      const total = billItems.reduce((sum, item) => sum + item.price * item.qty, 0);
-      const now = new Date();
-      
-      // Save to completed_bills for analytics
-      const { error: insertError } = await supabase
-        .from('completed_bills')
-        .insert({
-          table_number: selectedTable,
-          items: billItems,
-          total: total,
-          completed_at: now.toISOString(),
-          day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' }),
-          hour_of_day: now.getHours(),
-          date: now.toISOString().split('T')[0]
-        });
-
-      if (insertError) throw insertError;
-
-      // Mark as cleared in active bills
-      const { error: updateError } = await supabase
-        .from('bills')
-        .update({ status: 'cleared' })
-        .eq('table_number', selectedTable)
-        .eq('status', 'active');
-
-      if (updateError) throw updateError;
-
-      // Clear from local state
-      setBills(prev => ({ ...prev, [selectedTable]: [] }));
-      setShowCartDrawer(false);
-      
-      alert('Bill cleared and saved for analytics!');
-    } catch (error) {
-      console.error('Error clearing bill:', error);
-      alert('Failed to clear bill. Please try again.');
+    const tableToUpdate = viewingTableFromAllTables || selectedTable;
+    if (!tableToUpdate) return;
+    
+    const billItems = bills[tableToUpdate];
+    if (!billItems || billItems.length === 0) {
+      alert('No items to clear');
+      return;
     }
-  }
-};
+
+    if (window.confirm(`Clear all items for Table ${tableToUpdate}?`)) {
+      try {
+        const total = billItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+        const now = new Date();
+        
+        const { error: insertError } = await supabase
+          .from('completed_bills')
+          .insert({
+            table_number: tableToUpdate,
+            items: billItems,
+            total: total,
+            completed_at: now.toISOString(),
+            day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' }),
+            hour_of_day: now.getHours(),
+            date: now.toISOString().split('T')[0]
+          });
+
+        if (insertError) throw insertError;
+
+        const { error: updateError } = await supabase
+          .from('bills')
+          .update({ status: 'cleared' })
+          .eq('table_number', tableToUpdate)
+          .eq('status', 'active');
+
+        if (updateError) throw updateError;
+
+        setBills(prev => ({ ...prev, [tableToUpdate]: [] }));
+        setShowCartDrawer(false);
+        setViewingTableFromAllTables(null);
+        
+        alert('Bill cleared and saved for analytics!');
+      } catch (error) {
+        console.error('Error clearing bill:', error);
+        alert('Failed to clear bill. Please try again.');
+      }
+    }
+  };
 
   const printBill = async () => {
-    if (!selectedTable) return;
+    const tableToUpdate = viewingTableFromAllTables || selectedTable;
+    if (!tableToUpdate) return;
 
     const now = new Date();
     let total = 0;
-    const billRows = bills[selectedTable].map(b => {
+    const billRows = bills[tableToUpdate].map(b => {
       const lineTotal = b.price * b.qty;
       total += lineTotal;
       return `<tr><td>${b.name} (${b.portion})</td><td style="text-align:center;">${b.qty}</td><td style="text-align:right;">${b.price.toFixed(2)}</td><td style="text-align:right;">${lineTotal.toFixed(2)}</td></tr>`;
     }).join("");
 
-    const printContent = `<html><head><title>Receipt</title><style>@media print{body{font-family:monospace;font-size:12px;width:80mm;margin:0;padding:5px}h2,p{margin:4px 0;text-align:center}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:3px 0}th{text-align:left;border-bottom:1px dotted #000}td{border-bottom:1px dotted #ccc}tfoot td{font-weight:bold;border-top:1px dotted #000;padding-top:6px}.right{text-align:right}.center{text-align:center}}@page{margin:0}</style></head><body><h2>Anand Dabeli</h2><p>Phone: 123-456-7890</p><hr><p><strong>Table:</strong> ${selectedTable} | ${now.toLocaleDateString()} ${now.toLocaleTimeString()}</p><table><thead><tr><th>Item</th><th class="center">Qty</th><th class="right">Price</th><th class="right">Total</th></tr></thead><tbody>${billRows}</tbody><tfoot><tr><td colspan="3" class="right">Total:</td><td class="right">${total.toFixed(2)}</td></tr></tfoot></table><hr><p>Thank you!</p></body></html>`;
+    const printContent = `<html><head><title>Receipt</title><style>@media print{body{font-family:monospace;font-size:12px;width:80mm;margin:0;padding:5px}h2,p{margin:4px 0;text-align:center}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:3px 0}th{text-align:left;border-bottom:1px dotted #000}td{border-bottom:1px dotted #ccc}tfoot td{font-weight:bold;border-top:1px dotted #000;padding-top:6px}.right{text-align:right}.center{text-align:center}}@page{margin:0}</style></head><body><h2>Anand Fast Food</h2><p>Phone: 123-456-7890</p><hr><p><strong>Table:</strong> ${tableToUpdate} | ${now.toLocaleDateString()} ${now.toLocaleTimeString()}</p><table><thead><tr><th>Item</th><th class="center">Qty</th><th class="right">Price</th><th class="right">Total</th></tr></thead><tbody>${billRows}</tbody><tfoot><tr><td colspan="3" class="right">Total:</td><td class="right">${total.toFixed(2)}</td></tr></tfoot></table><hr><p>Thank you!</p></body></html>`;
 
     const w = window.open("", "_blank", "width=320,height=480");
     w.document.write(printContent);
     w.document.close();
     setTimeout(() => { w.print(); w.close(); }, 300);
 
-    // Mark as printed in database
-    await supabase
-      .from('bills')
-      .update({ status: 'printed' })
-      .eq('table_number', selectedTable)
-      .eq('status', 'active');
-
     setShowCartDrawer(false);
+    setViewingTableFromAllTables(null);
+  };
+
+  // NEW: Handle table click from All Tables grid
+  const handleAllTablesTableClick = (tableNum) => {
+    setViewingTableFromAllTables(tableNum);
+    setShowCartDrawer(true);
+  };
+
+  // Close drawer handler
+  const handleCloseDrawer = () => {
+    setShowCartDrawer(false);
+    setViewingTableFromAllTables(null);
   };
 
   const currentBill = selectedTable ? bills[selectedTable] || [] : [];
   const total = currentBill.reduce((sum, item) => sum + item.price * item.qty, 0);
   const cartItemCount = currentBill.reduce((sum, item) => sum + item.qty, 0);
+
+  // For All Tables drawer
+  const viewingBill = viewingTableFromAllTables ? bills[viewingTableFromAllTables] || [] : currentBill;
+  const viewingTotal = viewingBill.reduce((sum, item) => sum + item.price * item.qty, 0);
 
   const getItemQty = (itemName, portion) => {
     if (!selectedTable) return 0;
@@ -496,63 +574,83 @@ export default function RestaurantBillGenerator() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      <Header onCartClick={() => setShowCartDrawer(true)} cartItemCount={cartItemCount} />
+      <Header 
+        onCartClick={() => setShowCartDrawer(true)} 
+        cartItemCount={cartItemCount}
+        currentTab={activeTab}
+      />
 
-      {/* Mobile: Floating Table Button */}
-      
-<div className="md:hidden sticky top-14 z-40 bg-white border-b px-4 py-2">
-  <button
-    onClick={() => setShowTableModal(true)}
-    className="w-full py-3 bg-orange-500 text-white rounded-xl font-bold text-lg active:bg-orange-600 flex justify-between items-center px-15"
-  >
-    <span>
-      {selectedTable ? `Table ${selectedTable}` : 'Select Table'}
-    </span>
+      {/* Mobile: Show different content based on active tab */}
+      {activeTab === 'home' && (
+        <>
+          {/* Mobile: Floating Table Button */}
+          <div className="md:hidden sticky top-14 z-40 bg-white border-b px-4 py-2">
+            <button
+              onClick={() => setShowTableModal(true)}
+              className="w-full py-3 bg-orange-500 text-white rounded-xl font-bold text-lg active:bg-orange-600 flex justify-between items-center px-6"
+            >
+              <span>
+                {selectedTable ? `Table ${selectedTable}` : 'Select Table'}
+              </span>
 
-    {/* Show total only if table selected and bill > 0 */}
-    {selectedTable && total > 0 && (
-      <span className="bg-white text-black px-3 py-1 rounded-xl font-bold text-lg">
-        ₹{total}
-      </span>
-    )}
-  </button>
-</div>
-
-
-      {/* Mobile: Category Pills */}
-      <div className="md:hidden">
-        <CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
-      </div>
-
-      <main className="flex flex-1 overflow-hidden">
-        {/* Desktop Layout */}
-        <TableSelector tables={tables} selectedTable={selectedTable} onSelectTable={setSelectedTable} />
-        
-        <div className="flex w-full md:w-[62%] border-r border-gray-400">
-          <CategorySidebar categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
-          
-          {/* Menu Grid - Works for both mobile and desktop */}
-          <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto bg-white">
-            {filteredMenu.map((item, idx) => (
-              <MenuItem 
-                key={idx} 
-                item={item} 
-                onAddItem={addItemToBill}
-                currentQty={getItemQty(item.name, item.options[0].portion)}
-              />
-            ))}
+              {selectedTable && total > 0 && (
+                <span className="bg-white text-black px-3 py-1 rounded-xl font-bold text-lg">
+                  ₹{total}
+                </span>
+              )}
+            </button>
           </div>
-        </div>
 
-        <BillSection
-          selectedTable={selectedTable}
-          currentBill={currentBill}
-          total={total}
-          onChangeQuantity={changeQuantity}
-          onPrintBill={printBill}
-          onClearBill={clearBill}
-        />
+          {/* Mobile: Category Pills */}
+          <div className="md:hidden">
+            <CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
+          </div>
+        </>
+      )}
+
+      <main className="flex flex-1 overflow-hidden pb-16 md:pb-0">
+        {activeTab === 'home' ? (
+          <>
+            {/* Desktop Layout */}
+            <TableSelector tables={tables} selectedTable={selectedTable} onSelectTable={setSelectedTable} />
+            
+            <div className="flex w-full md:w-[62%] border-r border-gray-400">
+              <CategorySidebar categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
+              
+              {/* Menu Grid */}
+              <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto bg-white">
+                {filteredMenu.map((item, idx) => (
+                  <MenuItem 
+                    key={idx} 
+                    item={item} 
+                    onAddItem={addItemToBill}
+                    currentQty={getItemQty(item.name, item.options[0].portion)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <BillSection
+              selectedTable={selectedTable}
+              currentBill={currentBill}
+              total={total}
+              onChangeQuantity={changeQuantity}
+              onPrintBill={printBill}
+              onClearBill={clearBill}
+            />
+          </>
+        ) : (
+          /* All Tables Tab */
+          <AllTablesGrid 
+            tables={tables}
+            bills={bills}
+            onTableClick={handleAllTablesTableClick}
+          />
+        )}
       </main>
+
+      {/* Bottom Navigation (Mobile Only) */}
+      <BottomNavigation activeTab={activeTab} onTabChange={setActiveTab} />
 
       {/* Mobile Modals */}
       {showTableModal && (
@@ -566,13 +664,13 @@ export default function RestaurantBillGenerator() {
 
       {showCartDrawer && (
         <CartDrawer
-          selectedTable={selectedTable}
-          currentBill={currentBill}
-          total={total}
+          selectedTable={viewingTableFromAllTables || selectedTable}
+          currentBill={viewingBill}
+          total={viewingTotal}
           onChangeQuantity={changeQuantity}
           onPrintBill={printBill}
           onClearBill={clearBill}
-          onClose={() => setShowCartDrawer(false)}
+          onClose={handleCloseDrawer}
         />
       )}
     </div>
