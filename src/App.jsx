@@ -186,7 +186,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
   </div>
 );
 
-// NEW: All Tables Grid Component
+// All Tables Grid Component
 const AllTablesGrid = ({ tables, bills, onTableClick }) => {
   const getTableTotal = (tableNum) => {
     const bill = bills[tableNum] || [];
@@ -227,7 +227,7 @@ const AllTablesGrid = ({ tables, bills, onTableClick }) => {
   );
 };
 
-// NEW: Bottom Navigation Component
+// Bottom Navigation Component
 const BottomNavigation = ({ activeTab, onTabChange }) => (
   <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
     <div className="grid grid-cols-2">
@@ -346,13 +346,135 @@ export default function RestaurantBillGenerator() {
   const [showTableModal, setShowTableModal] = useState(false);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('home'); // NEW: Tab state
-  const [viewingTableFromAllTables, setViewingTableFromAllTables] = useState(null); // NEW: For All Tables drawer
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('activeTab') || 'home';
+  });
+  const [viewingTableFromAllTables, setViewingTableFromAllTables] = useState(null);
+  const [pendingSaves, setPendingSaves] = useState([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Load bills from Supabase on mount
+  // Load bills from Supabase on mount AND restore selected table
   useEffect(() => {
     loadBillsFromSupabase();
+    
+    // Restore selected table from localStorage
+    const savedTable = localStorage.getItem('selectedTable');
+    if (savedTable) {
+      setSelectedTable(parseInt(savedTable));
+    }
   }, []);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('✅ Back online!');
+      setIsOnline(true);
+      retryPendingSaves();
+    };
+    
+    const handleOffline = () => {
+      console.log('❌ Offline!');
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // NEW: Real-time subscription to bill changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('bills-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bills'
+        },
+        (payload) => {
+          console.log('📡 Real-time update received:', payload);
+          
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const { table_number, items, status, id } = payload.new;
+            
+            console.log(`📡 Table ${table_number} updated with ${items?.length || 0} items`);
+            
+            // Only update if status is active
+            if (status === 'active') {
+              setBills(prev => {
+                const currentItems = prev[table_number] || [];
+                const newItems = items || [];
+                
+                // Only update if the data is actually different
+                const isDifferent = JSON.stringify(currentItems) !== JSON.stringify(newItems);
+                
+                if (isDifferent) {
+                  console.log(`✅ Updating Table ${table_number}: ${currentItems.length} -> ${newItems.length} items`);
+                  return {
+                    ...prev,
+                    [table_number]: newItems
+                  };
+                }
+                
+                console.log(`⏭️ Skipping update for Table ${table_number} - no changes`);
+                return prev;
+              });
+            } else if (status === 'cleared') {
+              // Clear the table if bill was cleared
+              setBills(prev => ({
+                ...prev,
+                [table_number]: []
+              }));
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const { table_number } = payload.old;
+            setBills(prev => ({
+              ...prev,
+              [table_number]: []
+            }));
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Subscription status:', status);
+      });
+
+    return () => {
+      console.log('🔌 Unsubscribing from real-time updates');
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Save activeTab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
+
+  // Save selectedTable to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedTable) {
+      localStorage.setItem('selectedTable', selectedTable.toString());
+    }
+  }, [selectedTable]);
+
+  // Retry failed saves when back online
+  const retryPendingSaves = async () => {
+    if (pendingSaves.length === 0) return;
+    
+    console.log('🔄 Retrying', pendingSaves.length, 'pending saves...');
+    
+    for (const save of pendingSaves) {
+      await saveBillToSupabase(save.tableNumber, save.items, false);
+    }
+    
+    setPendingSaves([]);
+    alert('✅ Synced offline changes!');
+  };
 
   const loadBillsFromSupabase = async () => {
     try {
@@ -364,12 +486,19 @@ export default function RestaurantBillGenerator() {
 
       if (error) throw error;
 
+      console.log('📥 Loaded from Supabase:', data);
+
       const loadedBills = {};
       tables.forEach(num => {
         const tableBill = data.find(b => b.table_number === num);
         loadedBills[num] = tableBill ? tableBill.items : [];
+        
+        if (tableBill) {
+          console.log(`Table ${num} items:`, tableBill.items);
+        }
       });
 
+      console.log('📊 Final bills state:', loadedBills);
       setBills(loadedBills);
     } catch (error) {
       console.error('Error loading bills:', error);
@@ -381,49 +510,93 @@ export default function RestaurantBillGenerator() {
     }
   };
 
-  const saveBillToSupabase = async (tableNumber, items) => {
+  const saveBillToSupabase = async (tableNumber, items, addToQueue = true) => {
     try {
+      console.log('💾 Saving to Supabase:', { tableNumber, itemCount: items.length, items });
+      
       const total = items.reduce((sum, item) => sum + item.price * item.qty, 0);
 
-      const { data: existing } = await supabase
+      // Use limit(1) to handle multiple rows gracefully
+      const { data: existingRows, error: selectError } = await supabase
         .from('bills')
         .select('id')
         .eq('table_number', tableNumber)
         .eq('status', 'active')
-        .single();
+        .limit(1);
+
+      if (selectError) {
+        console.error('❌ Select error:', selectError);
+        throw selectError;
+      }
+
+      const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
 
       if (existing) {
-        const { error } = await supabase
+        console.log('🔄 Updating existing bill:', existing.id, 'with', items.length, 'items');
+        
+        const { data, error } = await supabase
           .from('bills')
           .update({
             items: items,
             total: total,
             updated_at: new Date().toISOString()
           })
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select();
 
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Update error:', error);
+          throw error;
+        }
+        console.log('✅ Update successful, returned data:', data);
       } else {
-        const { error } = await supabase
+        console.log('➕ Creating new bill with', items.length, 'items');
+        
+        const { data, error } = await supabase
           .from('bills')
           .insert({
             table_number: tableNumber,
             items: items,
             total: total,
             status: 'active'
-          });
+          })
+          .select();
 
-        if (error) throw error;
+        if (error) {
+          console.error('❌ Insert error:', error);
+          throw error;
+        }
+        console.log('✅ Insert successful, returned data:', data);
       }
+      
+      // Add a small delay to ensure database commit before real-time triggers
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
     } catch (error) {
-      console.error('Error saving bill:', error);
-      alert('Failed to save bill. Please try again.');
+      console.error('❌ Error saving bill:', error);
+      
+      // Check if it's a network error
+      if (error.message.includes('Failed to fetch') || 
+          error.message.includes('ERR_INTERNET_DISCONNECTED')) {
+        
+        if (addToQueue) {
+          console.log('📥 Adding to offline queue');
+          setPendingSaves(prev => [...prev, { tableNumber, items }]);
+          
+          // Show user-friendly message
+          alert('⚠️ No internet connection. Changes saved locally and will sync when online.');
+        }
+      } else {
+        // Other errors
+        alert('Failed to save bill. Please try again.');
+      }
     }
   };
 
   const categories = [...new Set(menuItems.map(item => item.category))];
   const filteredMenu = selectedCategory ? menuItems.filter(i => i.category === selectedCategory) : menuItems;
 
+  // Updated addItemToBill with optimistic updates
   const addItemToBill = async (name, portion, price) => {
     if (!selectedTable) {
       setShowTableModal(true);
@@ -441,8 +614,11 @@ export default function RestaurantBillGenerator() {
     }
 
     newBills[selectedTable] = bill;
+    
+    // Update state immediately (optimistic update)
     setBills(newBills);
 
+    // Try to save to Supabase (will queue if offline)
     await saveBillToSupabase(selectedTable, bill);
   };
 
@@ -538,7 +714,7 @@ export default function RestaurantBillGenerator() {
     setViewingTableFromAllTables(null);
   };
 
-  // NEW: Handle table click from All Tables grid
+  // Handle table click from All Tables grid
   const handleAllTablesTableClick = (tableNum) => {
     setViewingTableFromAllTables(tableNum);
     setShowCartDrawer(true);
