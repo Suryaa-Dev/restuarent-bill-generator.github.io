@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3 } from 'lucide-react';
 import { supabase } from './config/supabase';
 import menuItems from './data/items';
@@ -36,11 +36,10 @@ const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose }) =
           <button
             key={num}
             onClick={() => { onSelectTable(num); onClose(); }}
-            className={`p-6 rounded-xl text-lg font-bold transition-all ${
-              selectedTable === num
-                ? 'bg-orange-500 text-white shadow-lg'
-                : 'bg-gray-100 text-gray-800 active:bg-gray-200'
-            }`}
+            className={`p-6 rounded-xl text-lg font-bold transition-all ${selectedTable === num
+              ? 'bg-orange-500 text-white shadow-lg'
+              : 'bg-gray-100 text-gray-800 active:bg-gray-200'
+              }`}
           >
             T{num}
           </button>
@@ -55,11 +54,10 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
   <div className="sticky top-0 z-40 bg-white border-b px-4 py-3 overflow-x-auto flex gap-2 scrollbar-hide">
     <button
       onClick={() => onSelectCategory(null)}
-      className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${
-        selectedCategory === null
-          ? 'bg-orange-500 text-white'
-          : 'bg-gray-100 text-gray-700 active:bg-gray-200'
-      }`}
+      className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${selectedCategory === null
+        ? 'bg-orange-500 text-white'
+        : 'bg-gray-100 text-gray-700 active:bg-gray-200'
+        }`}
     >
       All
     </button>
@@ -67,11 +65,10 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
       <button
         key={cat}
         onClick={() => onSelectCategory(cat)}
-        className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${
-          selectedCategory === cat
-            ? 'bg-orange-500 text-white'
-            : 'bg-gray-100 text-gray-700 active:bg-gray-200'
-        }`}
+        className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${selectedCategory === cat
+          ? 'bg-orange-500 text-white'
+          : 'bg-gray-100 text-gray-700 active:bg-gray-200'
+          }`}
       >
         {cat}
       </button>
@@ -127,7 +124,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
         </h2>
         <button onClick={onClose} className="p-1"><X size={24} /></button>
       </div>
-      
+
       <div className="flex-1 overflow-y-auto p-4">
         {currentBill.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
@@ -201,12 +198,12 @@ const AllTablesGrid = ({ tables, bills, onTableClick }) => {
   return (
     <div className="flex-1 overflow-y-auto bg-white p-4">
       <h2 className="text-xl font-bold text-gray-900 mb-4">All Tables</h2>
-      
+
       <div className="grid grid-cols-3 gap-3">
         {tables.map(num => {
           const total = getTableTotal(num);
           const empty = isTableEmpty(num);
-          
+
           return (
             <button
               key={num}
@@ -233,23 +230,21 @@ const BottomNavigation = ({ activeTab, onTabChange }) => (
     <div className="grid grid-cols-2">
       <button
         onClick={() => onTabChange('home')}
-        className={`flex flex-col items-center justify-center py-3 transition-colors ${
-          activeTab === 'home' 
-            ? 'text-orange-500 bg-orange-50' 
-            : 'text-gray-600'
-        }`}
+        className={`flex flex-col items-center justify-center py-3 transition-colors ${activeTab === 'home'
+          ? 'text-orange-500 bg-orange-50'
+          : 'text-gray-600'
+          }`}
       >
         <Home size={24} />
         <span className="text-xs mt-1 font-medium">Home</span>
       </button>
-      
+
       <button
         onClick={() => onTabChange('allTables')}
-        className={`flex flex-col items-center justify-center py-3 transition-colors ${
-          activeTab === 'allTables' 
-            ? 'text-orange-500 bg-orange-50' 
-            : 'text-gray-600'
-        }`}
+        className={`flex flex-col items-center justify-center py-3 transition-colors ${activeTab === 'allTables'
+          ? 'text-orange-500 bg-orange-50'
+          : 'text-gray-600'
+          }`}
       >
         <Grid3x3 size={24} />
         <span className="text-xs mt-1 font-medium">All Tables</span>
@@ -266,9 +261,8 @@ const TableSelector = ({ tables, selectedTable, onSelectTable }) => (
       <div
         key={num}
         onClick={() => onSelectTable(num)}
-        className={`block p-3 mb-2 rounded-lg cursor-pointer text-center font-medium transition-all ${
-          selectedTable === num ? 'bg-gray-800 text-white' : 'bg-white text-gray-800 hover:bg-gray-300'
-        }`}
+        className={`block p-3 mb-2 rounded-lg cursor-pointer text-center font-medium transition-all ${selectedTable === num ? 'bg-gray-800 text-white' : 'bg-white text-gray-800 hover:bg-gray-300'
+          }`}
       >
         Table {num}
       </div>
@@ -283,18 +277,16 @@ const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => 
       <button
         key={cat}
         onClick={() => onSelectCategory(cat)}
-        className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${
-          selectedCategory === cat ? 'bg-gray-700 text-white' : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
-        }`}
+        className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === cat ? 'bg-gray-700 text-white' : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
+          }`}
       >
         {cat}
       </button>
     ))}
     <button
       onClick={() => onSelectCategory(null)}
-      className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${
-        selectedCategory === null ? 'bg-gray-700 text-white' : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
-      }`}
+      className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === null ? 'bg-gray-700 text-white' : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
+        }`}
     >
       All Items
     </button>
@@ -345,6 +337,10 @@ export default function RestaurantBillGenerator() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showTableModal, setShowTableModal] = useState(false);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
+
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('activeTab') || 'home';
@@ -353,10 +349,54 @@ export default function RestaurantBillGenerator() {
   const [pendingSaves, setPendingSaves] = useState([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
+  const selectedTableRef = useRef(null);
+  const viewingTableRef = useRef(null);
+
+
+  useEffect(() => {
+    selectedTableRef.current = selectedTable;
+  }, [selectedTable]);
+
+  useEffect(() => {
+    viewingTableRef.current = viewingTableFromAllTables;
+  }, [viewingTableFromAllTables]);
+
+
+
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  // Handle install
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+      setIsInstalled(true);
+    }
+  };
+
+
   // Load bills from Supabase on mount AND restore selected table
   useEffect(() => {
     loadBillsFromSupabase();
-    
+
     // Restore selected table from localStorage
     const savedTable = localStorage.getItem('selectedTable');
     if (savedTable) {
@@ -370,7 +410,7 @@ export default function RestaurantBillGenerator() {
       setIsOnline(true);
       retryPendingSaves();
     };
-    
+
     const handleOffline = () => {
       console.log('❌ Offline!');
       setIsOnline(false);
@@ -388,67 +428,37 @@ export default function RestaurantBillGenerator() {
   // NEW: Real-time subscription to bill changes
   useEffect(() => {
     const channel = supabase
-      .channel('bills-changes')
+      .channel('bills-realtime')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'bills'
+          table: 'bills',
+          filter: 'status=eq.active'
         },
         (payload) => {
-          console.log('📡 Real-time update received:', payload);
-          
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const { table_number, items, status, id } = payload.new;
-            
-            console.log(`📡 Table ${table_number} updated with ${items?.length || 0} items`);
-            
-            // Only update if status is active
-            if (status === 'active') {
-              setBills(prev => {
-                const currentItems = prev[table_number] || [];
-                const newItems = items || [];
-                
-                // Only update if the data is actually different
-                const isDifferent = JSON.stringify(currentItems) !== JSON.stringify(newItems);
-                
-                if (isDifferent) {
-                  console.log(`✅ Updating Table ${table_number}: ${currentItems.length} -> ${newItems.length} items`);
-                  return {
-                    ...prev,
-                    [table_number]: newItems
-                  };
-                }
-                
-                console.log(`⏭️ Skipping update for Table ${table_number} - no changes`);
-                return prev;
-              });
-            } else if (status === 'cleared') {
-              // Clear the table if bill was cleared
-              setBills(prev => ({
-                ...prev,
-                [table_number]: []
-              }));
-            }
-          } else if (payload.eventType === 'DELETE') {
-            const { table_number } = payload.old;
-            setBills(prev => ({
-              ...prev,
-              [table_number]: []
-            }));
-          }
+          console.log('📡 REALTIME PAYLOAD:', payload);
+
+          const row = payload.new || payload.old;
+          if (!row || !row.table_number) return;
+
+          setBills(prev => ({
+            ...prev,
+            [row.table_number]: row.items || []
+          }));
         }
       )
       .subscribe((status) => {
-        console.log('📡 Subscription status:', status);
+        console.log('📡 Realtime status:', status);
       });
 
     return () => {
-      console.log('🔌 Unsubscribing from real-time updates');
       supabase.removeChannel(channel);
     };
   }, []);
+
+
 
   // Save activeTab to localStorage whenever it changes
   useEffect(() => {
@@ -465,16 +475,18 @@ export default function RestaurantBillGenerator() {
   // Retry failed saves when back online
   const retryPendingSaves = async () => {
     if (pendingSaves.length === 0) return;
-    
+
     console.log('🔄 Retrying', pendingSaves.length, 'pending saves...');
-    
+
     for (const save of pendingSaves) {
       await saveBillToSupabase(save.tableNumber, save.items, false);
     }
-    
+
     setPendingSaves([]);
     alert('✅ Synced offline changes!');
   };
+
+
 
   const loadBillsFromSupabase = async () => {
     try {
@@ -492,7 +504,7 @@ export default function RestaurantBillGenerator() {
       tables.forEach(num => {
         const tableBill = data.find(b => b.table_number === num);
         loadedBills[num] = tableBill ? tableBill.items : [];
-        
+
         if (tableBill) {
           console.log(`Table ${num} items:`, tableBill.items);
         }
@@ -513,7 +525,7 @@ export default function RestaurantBillGenerator() {
   const saveBillToSupabase = async (tableNumber, items, addToQueue = true) => {
     try {
       console.log('💾 Saving to Supabase:', { tableNumber, itemCount: items.length, items });
-      
+
       const total = items.reduce((sum, item) => sum + item.price * item.qty, 0);
 
       // Use limit(1) to handle multiple rows gracefully
@@ -533,13 +545,16 @@ export default function RestaurantBillGenerator() {
 
       if (existing) {
         console.log('🔄 Updating existing bill:', existing.id, 'with', items.length, 'items');
-        
+
+        const nextVersion = Date.now();
+
         const { data, error } = await supabase
           .from('bills')
           .update({
-            items: items,
-            total: total,
-            updated_at: new Date().toISOString()
+            items,
+            total,
+            updated_at: new Date().toISOString(),
+            version: nextVersion
           })
           .eq('id', existing.id)
           .select();
@@ -551,15 +566,17 @@ export default function RestaurantBillGenerator() {
         console.log('✅ Update successful, returned data:', data);
       } else {
         console.log('➕ Creating new bill with', items.length, 'items');
-        
+
         const { data, error } = await supabase
           .from('bills')
           .insert({
-            table_number: tableNumber,
-            items: items,
-            total: total,
-            status: 'active'
+            table_number,
+            items,
+            total,
+            status: 'active',
+            version: Date.now()
           })
+
           .select();
 
         if (error) {
@@ -568,21 +585,21 @@ export default function RestaurantBillGenerator() {
         }
         console.log('✅ Insert successful, returned data:', data);
       }
-      
+
       // Add a small delay to ensure database commit before real-time triggers
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
     } catch (error) {
       console.error('❌ Error saving bill:', error);
-      
+
       // Check if it's a network error
-      if (error.message.includes('Failed to fetch') || 
-          error.message.includes('ERR_INTERNET_DISCONNECTED')) {
-        
+      if (error.message.includes('Failed to fetch') ||
+        error.message.includes('ERR_INTERNET_DISCONNECTED')) {
+
         if (addToQueue) {
           console.log('📥 Adding to offline queue');
           setPendingSaves(prev => [...prev, { tableNumber, items }]);
-          
+
           // Show user-friendly message
           alert('⚠️ No internet connection. Changes saved locally and will sync when online.');
         }
@@ -614,7 +631,7 @@ export default function RestaurantBillGenerator() {
     }
 
     newBills[selectedTable] = bill;
-    
+
     // Update state immediately (optimistic update)
     setBills(newBills);
 
@@ -645,7 +662,7 @@ export default function RestaurantBillGenerator() {
   const clearBill = async () => {
     const tableToUpdate = viewingTableFromAllTables || selectedTable;
     if (!tableToUpdate) return;
-    
+
     const billItems = bills[tableToUpdate];
     if (!billItems || billItems.length === 0) {
       alert('No items to clear');
@@ -656,7 +673,7 @@ export default function RestaurantBillGenerator() {
       try {
         const total = billItems.reduce((sum, item) => sum + item.price * item.qty, 0);
         const now = new Date();
-        
+
         const { error: insertError } = await supabase
           .from('completed_bills')
           .insert({
@@ -682,7 +699,7 @@ export default function RestaurantBillGenerator() {
         setBills(prev => ({ ...prev, [tableToUpdate]: [] }));
         setShowCartDrawer(false);
         setViewingTableFromAllTables(null);
-        
+
         alert('Bill cleared and saved for analytics!');
       } catch (error) {
         console.error('Error clearing bill:', error);
@@ -750,8 +767,21 @@ export default function RestaurantBillGenerator() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      <Header 
-        onCartClick={() => setShowCartDrawer(true)} 
+      {/* Show install button if not installed */}
+      {!isInstalled && installPrompt && (
+        <div className="fixed top-16 left-4 right-4 bg-orange-500 text-white p-3 rounded-lg shadow-lg z-50 md:hidden">
+          <p className="text-sm font-semibold mb-2">📱 Install Anand Fast Food App</p>
+          <button
+            onClick={handleInstall}
+            className="w-full bg-white text-orange-500 py-2 rounded font-bold"
+          >
+            Install Now
+          </button>
+        </div>
+      )}
+
+      <Header
+        onCartClick={() => setShowCartDrawer(true)}
         cartItemCount={cartItemCount}
         currentTab={activeTab}
       />
@@ -789,16 +819,16 @@ export default function RestaurantBillGenerator() {
           <>
             {/* Desktop Layout */}
             <TableSelector tables={tables} selectedTable={selectedTable} onSelectTable={setSelectedTable} />
-            
+
             <div className="flex w-full md:w-[62%] border-r border-gray-400">
               <CategorySidebar categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
-              
+
               {/* Menu Grid */}
               <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto bg-white">
                 {filteredMenu.map((item, idx) => (
-                  <MenuItem 
-                    key={idx} 
-                    item={item} 
+                  <MenuItem
+                    key={idx}
+                    item={item}
                     onAddItem={addItemToBill}
                     currentQty={getItemQty(item.name, item.options[0].portion)}
                   />
@@ -817,7 +847,7 @@ export default function RestaurantBillGenerator() {
           </>
         ) : (
           /* All Tables Tab */
-          <AllTablesGrid 
+          <AllTablesGrid
             tables={tables}
             bills={bills}
             onTableClick={handleAllTablesTableClick}
