@@ -1,10 +1,13 @@
-const CACHE_NAME = 'anand-pos-v1';
+const CACHE_NAME = 'anand-pos-v4';
 
 const urlsToCache = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
+
 
 // Install
 self.addEventListener('install', (event) => {
