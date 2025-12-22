@@ -570,12 +570,13 @@ export default function RestaurantBillGenerator() {
         const { data, error } = await supabase
           .from('bills')
           .insert({
-            table_number,
+            table_number: tableNumber,
             items,
             total,
             status: 'active',
             version: Date.now()
           })
+
 
           .select();
 
@@ -590,24 +591,18 @@ export default function RestaurantBillGenerator() {
       await new Promise(resolve => setTimeout(resolve, 100));
 
     } catch (error) {
-      console.error('❌ Error saving bill:', error);
+      console.error('❌ Save failed:', error);
 
-      // Check if it's a network error
-      if (error.message.includes('Failed to fetch') ||
-        error.message.includes('ERR_INTERNET_DISCONNECTED')) {
-
-        if (addToQueue) {
-          console.log('📥 Adding to offline queue');
-          setPendingSaves(prev => [...prev, { tableNumber, items }]);
-
-          // Show user-friendly message
-          alert('⚠️ No internet connection. Changes saved locally and will sync when online.');
-        }
-      } else {
-        // Other errors
-        alert('Failed to save bill. Please try again.');
+      // 🔁 Likely SW update / temporary offline
+      if (!navigator.onLine || error.message.includes('Failed to fetch')) {
+        setPendingSaves(prev => [...prev, { tableNumber, items }]);
+        console.log('📦 Queued due to SW update / offline');
+        return;
       }
+
+      alert('Failed to save bill. Please try again.');
     }
+
   };
 
   const categories = [...new Set(menuItems.map(item => item.category))];

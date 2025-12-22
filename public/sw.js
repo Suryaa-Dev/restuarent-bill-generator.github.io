@@ -8,26 +8,27 @@ const urlsToCache = [
 
 // Install
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
-  );
+  self.skipWaiting(); // 🔥 activate immediately
 });
 
 // Fetch
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // ❌ NEVER cache Supabase / API requests
+  if (url.origin.includes('supabase.co')) {
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then(
-      (response) => response || fetch(event.request)
-    )
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    })
   );
 });
 
+
 // Activate
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((key) => key !== CACHE_NAME && caches.delete(key)))
-    )
-  );
+  event.waitUntil(self.clients.claim()); // 🔥 control open tabs
 });

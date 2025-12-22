@@ -1,6 +1,6 @@
 {
   "name": "Anand Fast Food - Billing System",
-  "short_name": "Anand POS",
+  "short_name": "Anand Fast Food",
   "description": "Restaurant billing and management system",
   "start_url": "/",
   "display": "standalone",
