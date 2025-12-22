@@ -5,7 +5,10 @@
   "installCommand": "npm install",
 
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/((?!assets|sw\\.js|manifest\\.json|icon-192\\.png|icon-512\\.png).*)",
+      "destination": "/"
+    }
   ],
 
   "headers": [
