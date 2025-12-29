@@ -6,10 +6,9 @@
 ![TailwindCSS](https://img.shields.io/badge/Styling-TailwindCSS-38bdf8)
 ![Supabase](https://img.shields.io/badge/Backend-Supabase-3fcf8e)
 ![Postgres](https://img.shields.io/badge/Database-PostgreSQL-336791)
-![PWA](https://img.shields.io/badge/Platform-PWA-orange)
+![PWA and Web](https://img.shields.io/badge/Platform-PWA-orange)
 ![Realtime](https://img.shields.io/badge/Sync-Realtime%20Updates-ff9800)
 ![Status](https://img.shields.io/badge/Status-In%20Production-success)
-![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
@@ -28,8 +27,6 @@ This setup has reduced ordering time and confusion in daily operations at Anand 
 ---
 
 ## 🎯 **Key Differentiators (Real-world advantages)**
-
-Key Differentiators
 
 🍽️ Portion-based ordering
 One item, multiple sizes (Half / Full, Small / Large)
@@ -78,7 +75,9 @@ but grouped under *one clean item card.*
 - less scrolling, less confusion, faster ordering
 
 Paneer Fry → Half / Full
+
 Rice → Plate / Half
+
 Juice → Small / Large
 
 
@@ -108,9 +107,13 @@ Juice → Small / Large
 
 
 | UI      - React, Tailwind |
+
 | Backend - Supabase, PostgreSQL |
+
 | Sync    - Supabase Realtime |
+
 | Offline - Service Worker, IndexedDB Queue |
+
 | App Experience  -- PWA Install, Mobile-first layout |
 
 ---
