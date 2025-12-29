@@ -29,15 +29,31 @@ This setup has reduced ordering time and confusion in daily operations at Anand 
 
 ## 🎯 **Key Differentiators (Real-world advantages)**
 
-| Feature | What it solves |
-|---------|----------------|
-| **🍽️ Portion-based ordering** | Menu stays clean, ordering becomes faster (1 tap adds default portion) |
-| **📊 All Tables View w/ live totals** | Staff can monitor every table’s running bill *in one screen* |
-| **🔁 Realtime sync via Supabase** | Multiple devices stay instantly updated — no refresh needed |
-| **📱 Installable PWA** | Runs like a native app with home screen icon |
-| **📦 Offline queueing** | Saves locally if network drops — syncs when online |
-| **⚡ Optimistic UI updates** | Changes appear instantly before backend confirms |
+Key Differentiators
 
+🍽️ Portion-based ordering
+One item, multiple sizes (Half / Full, Small / Large)
+Default portion adds with a single tap → faster billing & cleaner menu
+
+📊 All Tables view
+Shows every table’s running total in one screen
+Helps staff monitor and switch between tables quickly
+
+🔁 Realtime sync (Supabase)
+Changes made on one device appear instantly on all others
+No manual refresh needed
+
+📱 Installable PWA
+Works like a native app on phones & tablets
+Add to home screen, runs full-screen, offline-friendly
+
+📦 Offline queueing
+If internet goes down, orders are saved locally
+Syncs automatically once connection returns
+
+⚡ Optimistic UI updates
+Items show up instantly before backend confirmation
+Keeps the app responsive during rush hours
 ---
 
 ## 🎥 Demo Highlights
@@ -66,10 +82,6 @@ Rice → Plate / Half
 Juice → Small / Large
 
 
-_No duplicate menu items — clean & fast._
-
----
-
 ## 📸 Screenshots
 
 ### 🖥️ Desktop + Mobile Side-by-Side
@@ -94,13 +106,12 @@ _No duplicate menu items — clean & fast._
 
 ## 💻 Tech Stack
 
-| Layer | Tools |
-|-------|-------|
-| UI | React, Tailwind |
-| Backend | Supabase, PostgreSQL |
-| Sync | Supabase Realtime |
-| Offline | Service Worker, IndexedDB Queue |
-| App Experience | PWA Install, Mobile-first layout |
+
+| UI      - React, Tailwind |
+| Backend - Supabase, PostgreSQL |
+| Sync    - Supabase Realtime |
+| Offline - Service Worker, IndexedDB Queue |
+| App Experience  -- PWA Install, Mobile-first layout |
 
 ---
 
