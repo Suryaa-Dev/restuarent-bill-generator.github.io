@@ -1,125 +1,120 @@
-Anand Fast Food POS 🍽️⚡
-> Fast, portion-based POS for restaurants — multi-table totals, realtime sync & PWA support. Built for production use at Anand Fast Food.
+# 🍽️ Anand Fast Food POS — Real-Time Restaurant Billing System
+> Fast, portion-based POS with multi-table totals, realtime sync & installable PWA.  
+> Built for **Anand Fast Food** (my dad’s business) — tested in daily real-world usage.
+
 ![React](https://img.shields.io/badge/Frontend-React-blue)
 ![TailwindCSS](https://img.shields.io/badge/Styling-TailwindCSS-38bdf8)
 ![Supabase](https://img.shields.io/badge/Backend-Supabase-3fcf8e)
 ![Postgres](https://img.shields.io/badge/Database-PostgreSQL-336791)
 ![PWA](https://img.shields.io/badge/Platform-PWA-orange)
 ![Realtime](https://img.shields.io/badge/Sync-Realtime%20Updates-ff9800)
-![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-In%20Production-success)
+![License](https://img.shields.io/badge/License-MIT-green)
+
+---
+
+## 📌 Overview
+
+Anand Fast Food POS is designed to solve **real restaurant problems** — speed during rush hours, quick switching between tables, and clean item selection using **portion-based ordering**.
+
+Unlike traditional billing apps, this system:
+- keeps menu clutter-free  
+- lets staff add items in *one tap*  
+- shows all running table totals *at once*  
+- syncs across devices *instantly*  
+
+This setup has reduced ordering time and confusion in daily operations at Anand Fast Food.
+
+---
+
+## 🎯 **Key Differentiators (Real-world advantages)**
+
+| Feature | What it solves |
+|---------|----------------|
+| **🍽️ Portion-based ordering** | Menu stays clean, ordering becomes faster (1 tap adds default portion) |
+| **📊 All Tables View w/ live totals** | Staff can monitor every table’s running bill *in one screen* |
+| **🔁 Realtime sync via Supabase** | Multiple devices stay instantly updated — no refresh needed |
+| **📱 Installable PWA** | Runs like a native app with home screen icon |
+| **📦 Offline queueing** | Saves locally if network drops — syncs when online |
+| **⚡ Optimistic UI updates** | Changes appear instantly before backend confirms |
+
+---
+
+## 🎥 Demo Highlights
+
+- Add items to **Table 1** using 1-tap default portions
+- Switch to **Table 5** — continue ordering seamlessly
+- Open **Cart drawer** — review orders instantly
+- Navigate to **All Tables** — view all totals at once
+- Select **Table 1** → **Clear Bill** — auto-saved for analytics
+
+> This matches how staff work during busy hours: *tap → serve → switch tables → continue.*
+
+---
+
+## 🧠 Why Portions Matter
+
+A portion is a **variant of the same item** with different quantity & price —  
+but grouped under *one clean item card.*
+
+- **1 tap** adds the most common portion  
+- extra portion buttons appear only if needed  
+- less scrolling, less confusion, faster ordering
+
+Paneer Fry → Half / Full
+Rice → Plate / Half
+Juice → Small / Large
 
 
-A fast, real-time restaurant billing system built for high-pressure kitchens — designed & developed for Anand Fast Food (my dad’s business).
+_No duplicate menu items — clean & fast._
 
-📌 Overview
+---
 
-Anand Fast Food POS is a modern restaurant billing system built to solve real-world challenges of fast-paced eateries.
-Unlike traditional billing systems, it prioritizes speed, clarity, and realtime synchronization, making order taking faster even during rush hours.
+## 📸 Screenshots
 
-This POS is actively used in a production environment — Anand Fast Food — to serve customers efficiently with portion-based ordering and multi-table management.
+### 🖥️ Desktop + Mobile Side-by-Side
+<img src="src/assets/screenshots/desktop-mobile.jpg" width="700"/>
 
-🚀 Key Differentiators (What makes this POS unique)
-Feature	Why it matters
-🍽️ Portion-based ordering (Half / Full / Small / Large)	Keeps menu clean & speeds up order taking — 1 tap = most common portion
-📊 All Tables View with live bill totals	Staff can see every table’s running total at once — helps during peak hours
-🔁 Realtime synchronization	Changes made on one device instantly reflect on all screens
-📱 PWA support (Install as app)	Works like an app on Android/iOS — offline fallback for temporary network issues
-🧾 Fast bill printing	Prints receipts within seconds using thermal printers
-📦 Offline queueing	Saves changes locally & syncs automatically when back online
-🔥 Optimistic UI updates	Bill updates instantly before server response — zero waiting time
-🎯 Why Portions Matter
+### 💻 Desktop — Active Bill
+<img src="src/assets/screenshots/desktop-bill.png" width="700"/>
 
-Instead of listing:
+### 📊 Dashboard (Analytics)
+<img src="src/assets/screenshots/dashboard.png" width="700"/>
 
-Paneer Fry Half  
-Paneer Fry Full  
-Paneer Fry Extra
+### 📱 Mobile — Rice Category Selected
+<img src="src/assets/screenshots/mobile-rice-category.jpg" width="350"/>
 
+### 📱 Mobile — Cart Drawer (Table 7)
+<img src="src/assets/screenshots/mobile-cart-table7.jpg" width="350"/>
 
-The system keeps one item card, with:
+### 📱 Mobile — All Tables Overview
+<img src="src/assets/screenshots/mobile-all-tables.jpg" width="350"/>
 
-1-tap default portion (most frequently ordered)
+---
 
-extra portion buttons below the card
+## 💻 Tech Stack
 
-This makes the menu compact, fast, and intuitive, reducing confusion for staff.
+| Layer | Tools |
+|-------|-------|
+| UI | React, Tailwind |
+| Backend | Supabase, PostgreSQL |
+| Sync | Supabase Realtime |
+| Offline | Service Worker, IndexedDB Queue |
+| App Experience | PWA Install, Mobile-first layout |
 
-🧠 Core Features
+---
 
-Add items with one tap
+## 🛠 Installation
 
-Custom portions for each dish
-
-Multi-table billing
-
-Local caching + sync on reconnect
-
-Realtime updates using Supabase
-
-Auto-save bills
-
-Move instantly between Home ↔ All Tables
-
-Category-based filtering
-
-Fast receipt printing
-
-Dark/light background UI contrast for rush hours
-
-💻 Tech Stack
-Frontend	Backend / DB	Others
-React + Vite	Supabase Realtime	Lucide Icons
-Tailwind CSS	Supabase Postgres	PWA + Service Worker
-—	—	IndexedDB offline queue
-📸 Screenshots (add later)
-Feature	Preview
-Portion Buttons	(add image)
-All Tables View	(add image)
-Bill Drawer	(add image)
-Printing Receipt	(add image)
-
-I can help you create clean screenshots later — just tell me when.
-
-🏁 Getting Started
-git clone https://github.com/your-username/anand-fast-food-pos.git
-cd anand-fast-food-pos
+```bash
+git clone https://github.com/Suryaa-Dev/restuarent-bill-generator.github.io
+cd restuarent-bill-generator.github.io
 npm install
 npm run dev
 
-
-For production build:
-
-npm run build
-
-🔧 Environment Variables
+📦 Environment
 
 Create .env:
 
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_anon_key
-
-📲 Install as App (PWA)
-
-Open on mobile browser
-
-Tap "Add to Home Screen"
-
-Launch like a native app
-
-🛠️ Roadmap
-
-Table merge/split
-
-Discounts and GST support
-
-KOT (Kitchen Order Ticket)
-
-Analytics dashboard
-
-Menu editing from app
-
-🙌 Credits
-
-Built for Anand Fast Food — Solapur
-by Suraj Sutar (yes, the owner’s son 😉)
+VITE_SUPABASE_URL=your_url
+VITE_SUPABASE_ANON_KEY=your_key

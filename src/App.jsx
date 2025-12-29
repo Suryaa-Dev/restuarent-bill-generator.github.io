@@ -254,21 +254,64 @@ const BottomNavigation = ({ activeTab, onTabChange }) => (
 );
 
 // Desktop Sidebar Components
-const TableSelector = ({ tables, selectedTable, onSelectTable }) => (
-  <div className="hidden md:block w-[15%] bg-gray-200 p-3 overflow-y-auto border-r border-gray-400">
-    <div className="font-bold mb-3 text-gray-700 text-lg">Tables</div>
-    {tables.map(num => (
-      <div
-        key={num}
-        onClick={() => onSelectTable(num)}
-        className={`block p-3 mb-2 rounded-lg cursor-pointer text-center font-medium transition-all ${selectedTable === num ? 'bg-gray-800 text-white' : 'bg-white text-gray-800 hover:bg-gray-300'
-          }`}
-      >
-        Table {num}
+// const TableSelector = ({ tables, selectedTable, onSelectTable }) => (
+//   <div className="hidden md:block w-[15%] bg-gray-200 p-3 overflow-y-auto border-r border-gray-400">
+//     <div className="font-bold mb-3 text-gray-700 text-lg">Tables</div>
+//     {tables.map(num => (
+//       <div
+//         key={num}
+//         onClick={() => onSelectTable(num)}
+//         className={`block p-3 mb-2 rounded-lg cursor-pointer text-center font-medium transition-all ${selectedTable === num ? 'bg-gray-800 text-white' : 'bg-white text-gray-800 hover:bg-gray-300'
+//           }`}
+//       >
+//         Table {num}
+//       </div>
+//     ))}
+//   </div>
+// );
+
+const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
+  const getTotal = (tableNum) => {
+    const bill = bills[tableNum] || [];
+    return bill.reduce((sum, item) => sum + item.price * item.qty, 0);
+  };
+
+  return (
+    <div className="hidden md:block w-[18%] bg-gray-100 p-4 border-r border-gray-300 overflow-y-auto">
+      <h3 className="font-bold text-lg mb-4 text-gray-700">Tables</h3>
+
+      <div className="grid grid-cols-2 gap-3">
+        {tables.map(num => {
+          const total = getTotal(num);
+          const isSelected = selectedTable === num;
+
+          return (
+            <button
+              key={num}
+              onClick={() => onSelectTable(num)}
+              className={`aspect-square rounded-xl border-2 p-3 flex flex-col items-center justify-center transition-all
+                ${isSelected
+                  ? 'bg-orange-500 text-white border-orange-500 scale-105'
+                  : 'bg-white border-gray-300 hover:bg-gray-200'}
+              `}
+            >
+              <span className="text-lg font-bold">T{num}</span>
+
+              {total > 0 ? (
+                <span className="text-xl font-bold mt-2">
+                  ₹{total}
+                </span>
+              ) : (
+                <span className="text-sm text-gray-400 mt-2">Empty</span>
+              )}
+            </button>
+          );
+        })}
       </div>
-    ))}
-  </div>
-);
+    </div>
+  );
+};
+
 
 const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => (
   <div className="hidden md:block w-[30%] bg-gray-100 p-3 border-r border-gray-400 overflow-y-auto">
@@ -813,7 +856,14 @@ export default function RestaurantBillGenerator() {
         {activeTab === 'home' ? (
           <>
             {/* Desktop Layout */}
-            <TableSelector tables={tables} selectedTable={selectedTable} onSelectTable={setSelectedTable} />
+            {/* <TableSelector tables={tables} selectedTable={selectedTable} onSelectTable={setSelectedTable} /> */}
+            <DesktopTableGrid
+              tables={tables}
+              bills={bills}
+              selectedTable={selectedTable}
+              onSelectTable={setSelectedTable}
+              className="tableselectstyle"
+            />
 
             <div className="flex w-full md:w-[62%] border-r border-gray-400">
               <CategorySidebar categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
