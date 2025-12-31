@@ -334,16 +334,15 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
                             onClick={() => onSelectTable(num)}
                             className={`relative aspect-square rounded-xl border p-2 flex flex-col 
                                 items-center justify-center transition-all duration-150 select-none
-                                ${
-                                    isSelected
-                                        ? 'bg-orange-500 text-white border-orange-500 shadow-lg scale-[1.04]'
-                                        : total > 0
+                                ${isSelected
+                                    ? 'bg-orange-500 text-white border-orange-500 shadow-lg scale-[1.04]'
+                                    : total > 0
                                         ? 'bg-orange-50 text-gray-800 border-orange-200 shadow-sm hover:bg-orange-100'
                                         : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 shadow-sm'
                                 }
                             `}
                         >
-                            
+
                             <span className="text-base font-semibold">T{num}</span>
 
                             {total > 0 ? (
@@ -390,10 +389,13 @@ const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => 
 
 const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill }) => (
     <div className="hidden md:flex w-[23%] bg-white p-4 flex-col border-l border-gray-400">
-        <h3 className="text-center text-xl font-bold text-gray-700 mb-4">
+
+        <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
             {selectedTable ? `Bill - Table ${selectedTable}` : 'Bill - Select a Table'}
         </h3>
-        <div className="flex-1 overflow-y-auto mb-4">
+
+        {/* scrollable list only */}
+        <div className="flex-1 overflow-y-auto mb-3">
             {currentBill.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
                     <span className="flex-1 text-gray-800">{item.name} ({item.portion})</span>
@@ -405,24 +407,38 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                             onChange={(e) => onChangeQuantity(idx, e.target.value)}
                             className="w-14 px-2 py-1 text-right bg-gray-200 border border-gray-400 rounded text-sm"
                         />
-                        <span className="min-w-15 text-right font-bold text-gray-800">₹{item.price * item.qty}</span>
+                        <span className="min-w-15 text-right font-bold text-gray-800">
+                            ₹{item.price * item.qty}
+                        </span>
                     </div>
                 </div>
             ))}
         </div>
-        <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-4 shadow-lg">
-            Total: ₹{total}
-        </div>
-        <div className="flex gap-4">
-            <button onClick={onPrintBill} className="flex-1 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all">
-                Print Bill
-            </button>
-            <button onClick={onClearBill} className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all">
-                Clear Bill
-            </button>
+
+        {/* TOTAL + buttons always visible */}
+        <div className="mt-auto">
+            <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3 shadow-lg">
+                Total: ₹{total}
+            </div>
+
+            <div className="flex gap-4">
+                <button
+                    onClick={onPrintBill}
+                    className="flex-1 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all"
+                >
+                    Print Bill
+                </button>
+                <button
+                    onClick={onClearBill}
+                    className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all"
+                >
+                    Clear Bill
+                </button>
+            </div>
         </div>
     </div>
 );
+
 
 // Main App
 export default function RestaurantBillGenerator() {
@@ -918,11 +934,47 @@ export default function RestaurantBillGenerator() {
                         />
 
 
-                        <div className="flex w-full md:w-[62%] border-r border-gray-400">
-                            <CategorySidebar categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
+                        <div className="flex flex-col w-full md:w-[62%] border-r border-gray-300">
+
+                            {/* Desktop Category Pills */}
+                            <div className="hidden md:block sticky top-0 z-10 bg-white border-b px-4 py-3">
+                                <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                                    <button
+                                        onClick={() => setSelectedCategory(null)}
+                                        className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${selectedCategory === null
+                                            ? 'bg-orange-500 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        All
+                                    </button>
+
+                                    {categories.map(cat => (
+                                        <button
+                                            key={cat}
+                                            onClick={() => setSelectedCategory(cat)}
+                                            className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${selectedCategory === cat
+                                                ? 'bg-orange-500 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            {cat}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
 
                             {/* Menu Grid */}
-                            <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto bg-white">
+                            {/* <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto bg-white"> */}
+                            <div className="
+    flex-1 
+    grid grid-cols-2 md:grid-cols-4 
+    gap-3 md:gap-4 
+    p-3 md:p-4 
+    overflow-y-auto bg-white
+    max-w-225 mx-auto
+">
+
                                 {filteredMenu.map((item, idx) => (
                                     <MenuItem
                                         key={idx}
@@ -933,6 +985,7 @@ export default function RestaurantBillGenerator() {
                                 ))}
                             </div>
                         </div>
+
 
                         <BillSection
                             selectedTable={selectedTable}

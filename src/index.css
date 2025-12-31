@@ -1,1 +1,55 @@
 @import "tailwindcss";
+
+/* Calendar Heatmap Styles */
+/* .react-calendar-heatmap .color-empty { 
+  fill: #ebedf0; 
+}
+.react-calendar-heatmap .color-scale-1 { 
+  fill: #c6e48b; 
+}
+.react-calendar-heatmap .color-scale-2 { 
+  fill: #7bc96f; 
+}
+.react-calendar-heatmap .color-scale-3 { 
+  fill: #239a3b; 
+}
+.react-calendar-heatmap .color-scale-4 { 
+  fill: #196127; 
+}
+
+/* Hide scrollbar for tab navigation */
+/* 
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+} */
+
+
+/* ===== CUSTOM MODERN SCROLLBAR ===== */
+* {
+  scrollbar-width: thin;              /* Firefox */
+  scrollbar-color: #c8c8c8 #f1f1f1;   /* Firefox thumb & track */
+}
+
+/* Chrome, Edge, Safari, Opera */
+*::-webkit-scrollbar {
+  width: 6px;        /* scrollbar thickness */
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent; 
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #c4c4c4;         /* subtle gray */
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;         /* slightly darker on hover */
+}
