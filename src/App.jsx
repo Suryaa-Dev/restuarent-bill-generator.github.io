@@ -387,15 +387,17 @@ const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => 
     </div>
 );
 
+/* --- BillSection Component --- */
 const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill }) => (
-    <div className="hidden md:flex w-[23%] bg-white p-4 flex-col border-l border-gray-400">
+    <div className="hidden md:flex w-[23%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
+        {/* Title */}
         <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
             {selectedTable ? `Bill - Table ${selectedTable}` : 'Bill - Select a Table'}
         </h3>
 
-        {/* scrollable list only */}
-        <div className="flex-1 overflow-y-auto mb-3">
+        {/* 🔹 scrollable item list */}
+        <div className="bill-scroll-area mb-3">
             {currentBill.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
                     <span className="flex-1 text-gray-800">{item.name} ({item.portion})</span>
@@ -415,7 +417,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
             ))}
         </div>
 
-        {/* TOTAL + buttons always visible */}
+        {/* 🔹 Total + Buttons always visible */}
         <div className="mt-auto">
             <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3 shadow-lg">
                 Total: ₹{total}
@@ -436,8 +438,10 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                 </button>
             </div>
         </div>
+
     </div>
 );
+
 
 
 // Main App

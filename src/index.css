@@ -53,3 +53,20 @@
 *::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;         /* slightly darker on hover */
 }
+
+
+/* Fix Bill Section for iPad landscape height
+   (medium screen, landscape orientation, height ≤ 820px)
+*/
+@media screen and (min-width: 768px) and (max-width: 1366px) and (orientation: landscape) {
+  .bill-section-fixed {
+    max-height: calc(100vh - 100px); /* adjust padding if needed */
+    display: flex;
+    flex-direction: column;
+  }
+
+  .bill-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+  }
+}
