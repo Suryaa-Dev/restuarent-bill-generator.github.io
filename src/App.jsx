@@ -389,7 +389,7 @@ const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => 
 
 /* --- BillSection Component --- */
 const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill }) => (
-    <div className="hidden md:flex w-[23%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
+    <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
         {/* Title */}
         <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
@@ -398,24 +398,34 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
 
         {/* 🔹 scrollable item list */}
         <div className="bill-scroll-area mb-3">
-            {currentBill.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
-                    <span className="flex-1 text-gray-800">{item.name} ({item.portion})</span>
-                    <div className="flex items-center gap-3">
-                        <input
-                            type="number"
-                            min="0"
-                            value={item.qty}
-                            onChange={(e) => onChangeQuantity(idx, e.target.value)}
-                            className="w-14 px-2 py-1 text-right bg-gray-200 border border-gray-400 rounded text-sm"
-                        />
-                        <span className="min-w-15 text-right font-bold text-gray-800">
-                            ₹{item.price * item.qty}
-                        </span>
-                    </div>
-                </div>
-            ))}
+    {currentBill.map((item, idx) => (
+        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
+            <span className="flex-1 text-gray-800">{item.name} ({item.portion})</span>
+
+            <div className="flex items-center gap-3">
+
+                {/* 🔹 updated qty input */}
+                <input
+                    type="text"
+                    inputMode="numeric"       // numeric keypad on iPad / mobile
+                    pattern="[0-9]*"          // only allow digits
+                    value={item.qty}
+                    onFocus={(e) => e.target.select()} // select old value instantly
+                    onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, ""); // remove non-numbers
+                        onChangeQuantity(idx, val);
+                    }}
+                    className="w-14 px-2 py-1 text-right bg-gray-200 border border-gray-400 rounded text-sm"
+                />
+
+                <span className="min-w-15 text-right font-bold text-gray-800">
+                    ₹{item.price * item.qty}
+                </span>
+            </div>
         </div>
+    ))}
+</div>
+
 
         {/* 🔹 Total + Buttons always visible */}
         <div className="mt-auto">
@@ -934,11 +944,11 @@ export default function RestaurantBillGenerator() {
                             bills={bills}
                             selectedTable={selectedTable}
                             onSelectTable={setSelectedTable}
-                            className="tableselectstyle"
+                            className="tableselectstyle w-[20%]"
                         />
 
 
-                        <div className="flex flex-col w-full md:w-[62%] border-r border-gray-300">
+                        <div className="flex flex-col w-full md:w-[57%] border-r border-gray-300">
 
                             {/* Desktop Category Pills */}
                             <div className="hidden md:block sticky top-0 z-10 bg-white border-b px-4 py-3">

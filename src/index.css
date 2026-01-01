@@ -1,54 +1,19 @@
 @import "tailwindcss";
 
-/* Calendar Heatmap Styles */
-/* .react-calendar-heatmap .color-empty { 
-  fill: #ebedf0; 
-}
-.react-calendar-heatmap .color-scale-1 { 
-  fill: #c6e48b; 
-}
-.react-calendar-heatmap .color-scale-2 { 
-  fill: #7bc96f; 
-}
-.react-calendar-heatmap .color-scale-3 { 
-  fill: #239a3b; 
-}
-.react-calendar-heatmap .color-scale-4 { 
-  fill: #196127; 
-}
+/* ===== INVISIBLE SCROLLBAR ===== */
 
-/* Hide scrollbar for tab navigation */
-/* 
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-} */
-
-
-/* ===== CUSTOM MODERN SCROLLBAR ===== */
+/* Firefox */
 * {
-  scrollbar-width: thin;              /* Firefox */
-  scrollbar-color: #c8c8c8 #f1f1f1;   /* Firefox thumb & track */
+  scrollbar-width: none;   /* hides scrollbar */
 }
 
-/* Chrome, Edge, Safari, Opera */
+/* Chrome, Edge, Safari, etc. */
 *::-webkit-scrollbar {
-  width: 6px;        /* scrollbar thickness */
-  height: 6px;
+  width: 0px;
+  height: 0px;
+  background: transparent;
 }
 
-*::-webkit-scrollbar-track {
-  background: transparent; 
-  border-radius: 10px;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: #c4c4c4;         /* subtle gray */
-  border-radius: 10px;
-}
 
 *::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;         /* slightly darker on hover */
@@ -58,11 +23,20 @@
 /* Fix Bill Section for iPad landscape height
    (medium screen, landscape orientation, height ≤ 820px)
 */
+/* 📌 iPad landscape & similar devices */
 @media screen and (min-width: 768px) and (max-width: 1366px) and (orientation: landscape) {
   .bill-section-fixed {
-    max-height: calc(100vh - 100px); /* adjust padding if needed */
+    /* fallback when dvh not supported */
+    max-height: calc(100vh - 60px);
     display: flex;
     flex-direction: column;
+  }
+
+  /* only override when dvh is supported */
+  @supports (height: 100dvh) {
+    .bill-section-fixed {
+      max-height: calc(100dvh - 60px);
+    }
   }
 
   .bill-scroll-area {
