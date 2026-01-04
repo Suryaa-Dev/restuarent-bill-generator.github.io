@@ -2,37 +2,46 @@
 
 /* ===== INVISIBLE SCROLLBAR ===== */
 
-/* Firefox */
 * {
-  scrollbar-width: none;   /* hides scrollbar */
+  scrollbar-width: none;
 }
 
-/* Chrome, Edge, Safari, etc. */
 *::-webkit-scrollbar {
-  width: 0px;
-  height: 0px;
+  width: 0;
+  height: 0;
   background: transparent;
 }
 
-
-*::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;         /* slightly darker on hover */
-}
-
-
-/* Fix Bill Section for iPad landscape height
-   (medium screen, landscape orientation, height ≤ 820px)
-*/
-/* 📌 iPad landscape & similar devices */
-@media screen and (min-width: 768px) and (max-width: 1366px) and (orientation: landscape) {
+/* ===== BILL SECTION BASE ===== */
+/* only flex layout on md+ screens (prevents showing on mobile) */
+@media (min-width: 768px) {
   .bill-section-fixed {
-    /* fallback when dvh not supported */
-    max-height: calc(100vh - 60px);
     display: flex;
     flex-direction: column;
   }
+}
 
-  /* only override when dvh is supported */
+.bill-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ===== STICKY BUTTONS ONLY ON iPad / md landscape ===== */
+@media screen and (min-width: 768px) and (max-width: 1366px) and (orientation: landscape) {
+  .bill-buttons {
+    position: sticky;
+    bottom: 0;
+    background: white;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+    z-index: 10;
+  }
+
+  .bill-section-fixed {
+    max-height: calc(100vh - 60px);
+  }
+
   @supports (height: 100dvh) {
     .bill-section-fixed {
       max-height: calc(100dvh - 60px);

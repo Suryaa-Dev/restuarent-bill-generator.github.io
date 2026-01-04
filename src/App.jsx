@@ -4,11 +4,14 @@ import { supabase } from './config/supabase';
 import menuItems from './data/items';
 
 
-// Header Component
+/* ---------------- Header ---------------- */
+
+// top bar with title + cart (mobile)
 const Header = ({ onCartClick, cartItemCount, currentTab }) => (
     <header className="sticky top-0 z-50 bg-orange-500 text-white py-3 px-4 shadow-lg">
         <div className="flex justify-between items-center">
             <h1 className="text-lg md:text-2xl font-bold">Anand Fast Food</h1>
+
             {currentTab === 'home' && (
                 <button onClick={onCartClick} className="relative md:hidden bg-orange-600 p-2 rounded-full">
                     <ShoppingCart size={24} />
@@ -23,22 +26,25 @@ const Header = ({ onCartClick, cartItemCount, currentTab }) => (
     </header>
 );
 
-// Mobile Table Selector Modal
+/* ---------------- Table Selector (Mobile) ---------------- */
+
+// modal to select table before ordering
 const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center">
-        <div className="bg-white w-full md:w-96 md:rounded-t-2xl rounded-t-2xl max-h-[70vh] flex flex-col">
+        <div className="bg-white w-full md:w-96 rounded-t-2xl max-h-[70vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
                 <h2 className="text-xl font-bold">Select Table</h2>
-                <button onClick={onClose} className="p-1"><X size={24} /></button>
+                <button onClick={onClose}><X size={24} /></button>
             </div>
+
             <div className="grid grid-cols-3 gap-3 p-4 overflow-y-auto">
                 {tables.map(num => (
                     <button
                         key={num}
                         onClick={() => { onSelectTable(num); onClose(); }}
                         className={`p-6 rounded-xl text-lg font-bold transition-all ${selectedTable === num
-                            ? 'bg-orange-500 text-white shadow-lg'
-                            : 'bg-gray-100 text-gray-800 active:bg-gray-200'
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-gray-100 text-gray-800'
                             }`}
                     >
                         T{num}
@@ -49,25 +55,24 @@ const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose }) =
     </div>
 );
 
-// Category Pills
+/* ---------------- Category Filter ---------------- */
+
+// horizontal category filter (mobile)
 const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
-    <div className="sticky top-0 z-40 bg-white border-b px-4 py-3 overflow-x-auto flex gap-2 scrollbar-hide">
+    <div className="sticky top-0 z-40 bg-white border-b px-4 py-3 flex gap-2 overflow-x-auto">
         <button
             onClick={() => onSelectCategory(null)}
-            className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${selectedCategory === null
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-100 text-gray-700 active:bg-gray-200'
+            className={`px-4 py-2 rounded-full ${selectedCategory === null ? 'bg-orange-500 text-white' : 'bg-gray-100'
                 }`}
         >
             All
         </button>
+
         {categories.map(cat => (
             <button
                 key={cat}
                 onClick={() => onSelectCategory(cat)}
-                className={`px-4 py-2 rounded-full whitespace-nowrap font-medium transition-all ${selectedCategory === cat
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-gray-100 text-gray-700 active:bg-gray-200'
+                className={`px-4 py-2 rounded-full ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-gray-100'
                     }`}
             >
                 {cat}
@@ -76,19 +81,27 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
     </div>
 );
 
-// Menu Item Card - Optimized for speed
+/* ---------------- Menu Item Card ---------------- */
+
+// tap card = default portion, buttons = other portions
 const MenuItem = ({ item, onAddItem, currentQty }) => {
-    const defaultOption = item.options[0];
+    const defaultOption = item.options[0]; // most ordered portion
     const hasMultipleOptions = item.options.length > 1;
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-400 overflow-hidden flex flex-col h-60 md:h-65">
-            <div onClick={() => onAddItem(item.name, defaultOption.portion, defaultOption.price)} className="cursor-pointer flex-1 flex flex-col">
-                <img src={item.img} alt={item.name} className="w-full h-28 md:h-32 object-cover shrink-0" />
+        <div className="bg-white rounded-xl border border-gray-300 overflow-hidden flex flex-col h-60">
+            <div
+                onClick={() => onAddItem(item.name, defaultOption.portion, defaultOption.price)}
+                className="cursor-pointer flex-1 flex flex-col"
+            >
+                <img src={item.img} alt={item.name} className="w-full h-28 object-cover" />
+
                 <div className="p-3 flex flex-col justify-between flex-1">
-                    <h3 className="font-bold text-gray-800 text-sm mb-1 line-clamp-2">{item.name}</h3>
-                    <div className="flex justify-between items-center mt-auto">
-                        <span className="text-orange-600 font-bold text-base">₹{defaultOption.price}</span>
+                    <h3 className="font-bold text-sm line-clamp-2">{item.name}</h3>
+
+                    <div className="flex justify-between items-center">
+                        <span className="text-orange-600 font-bold">₹{defaultOption.price}</span>
+
                         {currentQty > 0 && (
                             <span className="bg-orange-100 text-orange-600 px-2 py-1 rounded-full text-xs font-bold">
                                 {currentQty}x
@@ -97,13 +110,14 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
                     </div>
                 </div>
             </div>
+
             {hasMultipleOptions && (
-                <div className="px-3 pb-3 flex gap-2 shrink-0">
+                <div className="px-3 pb-3 flex gap-2">
                     {item.options.slice(1).map((opt, i) => (
                         <button
                             key={i}
                             onClick={() => onAddItem(item.name, opt.portion, opt.price)}
-                            className="flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-200 active:bg-orange-100"
+                            className="flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold"
                         >
                             {opt.portion} ₹{opt.price}
                         </button>
@@ -114,15 +128,17 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
     );
 };
 
-// Cart/Bill Drawer (Mobile) - Now reusable for both Home and All Tables tabs
+/* ---------------- Cart Drawer (Mobile) ---------------- */
+
+// bottom drawer for current table bill
 const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
         <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white rounded-t-3xl">
+            <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
                 <h2 className="text-xl font-bold">
                     {selectedTable ? `Table ${selectedTable}` : 'Cart'}
                 </h2>
-                <button onClick={onClose} className="p-1"><X size={24} /></button>
+                <button onClick={onClose}><X size={24} /></button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
@@ -133,48 +149,42 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                     </div>
                 ) : (
                     currentBill.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between py-3 border-b">
-                            <div className="flex-1">
-                                <p className="font-medium text-gray-800">{item.name}</p>
+                        <div key={idx} className="flex justify-between items-center py-3 border-b">
+                            <div>
+                                <p className="font-medium">{item.name}</p>
                                 <p className="text-sm text-gray-500">{item.portion}</p>
                             </div>
+
                             <div className="flex items-center gap-3">
-                                <button
-                                    onClick={() => onChangeQuantity(idx, item.qty - 1)}
-                                    className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
-                                >
+                                <button onClick={() => onChangeQuantity(idx, item.qty - 1)} className="bg-gray-100 p-2 rounded">
                                     <Minus size={16} />
                                 </button>
-                                <span className="font-bold w-8 text-center">{item.qty}</span>
-                                <button
-                                    onClick={() => onChangeQuantity(idx, item.qty + 1)}
-                                    className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"
-                                >
+
+                                <span className="font-bold w-6 text-center">{item.qty}</span>
+
+                                <button onClick={() => onChangeQuantity(idx, item.qty + 1)} className="bg-orange-500 text-white p-2 rounded">
                                     <Plus size={16} />
                                 </button>
-                                <span className="font-bold text-gray-800 w-16 text-right">₹{item.price * item.qty}</span>
+
+                                <span className="font-bold w-16 text-right">₹{item.price * item.qty}</span>
                             </div>
                         </div>
                     ))
                 )}
             </div>
 
-            <div className="border-t bg-white p-4 space-y-3">
-                <div className="flex justify-between items-center text-xl font-bold">
+            <div className="border-t p-4 space-y-3">
+                <div className="flex justify-between font-bold text-xl">
                     <span>Total</span>
                     <span className="text-orange-600">₹{total}</span>
                 </div>
+
                 <div className="flex gap-3">
-                    <button
-                        onClick={onClearBill}
-                        className="flex-1 py-3 bg-red-500 text-white rounded-xl font-semibold active:bg-red-600 flex items-center justify-center gap-2"
-                    >
+                    <button onClick={onClearBill} className="flex-1 bg-red-500 text-white py-3 rounded-xl font-semibold">
                         <Trash2 size={20} /> Clear
                     </button>
-                    <button
-                        onClick={onPrintBill}
-                        className="flex-1 py-3 bg-gray-800 text-white rounded-xl font-semibold active:bg-black flex items-center justify-center gap-2"
-                    >
+
+                    <button onClick={onPrintBill} className="flex-1 bg-gray-800 text-white py-3 rounded-xl font-semibold">
                         <Printer size={20} /> Print
                     </button>
                 </div>
@@ -183,7 +193,8 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
     </div>
 );
 
-// All Tables Grid Component
+
+// overview of all tables with running totals
 const AllTablesGrid = ({ tables, bills, onTableClick }) => {
     const getTableTotal = (tableNum) => {
         const bill = bills[tableNum] || [];
@@ -224,7 +235,7 @@ const AllTablesGrid = ({ tables, bills, onTableClick }) => {
     );
 };
 
-// Bottom Navigation Component
+// Bottom Navigation to switch between Home and All tables grid view
 const BottomNavigation = ({ activeTab, onTabChange }) => (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
         <div className="grid grid-cols-2">
@@ -252,66 +263,6 @@ const BottomNavigation = ({ activeTab, onTabChange }) => (
         </div>
     </div>
 );
-
-// Desktop Sidebar Components
-// const TableSelector = ({ tables, selectedTable, onSelectTable }) => (
-//   <div className="hidden md:block w-[15%] bg-gray-200 p-3 overflow-y-auto border-r border-gray-400">
-//     <div className="font-bold mb-3 text-gray-700 text-lg">Tables</div>
-//     {tables.map(num => (
-//       <div
-//         key={num}
-//         onClick={() => onSelectTable(num)}
-//         className={`block p-3 mb-2 rounded-lg cursor-pointer text-center font-medium transition-all ${selectedTable === num ? 'bg-gray-800 text-white' : 'bg-white text-gray-800 hover:bg-gray-300'
-//           }`}
-//       >
-//         Table {num}
-//       </div>
-//     ))}
-//   </div>
-// );
-
-
-// const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
-//     const getTotal = (tableNum) => {
-//         const bill = bills[tableNum] || [];
-//         return bill.reduce((sum, item) => sum + item.price * item.qty, 0);
-//     };
-
-//     return (
-//         <div className=" hidden md:block w-[18%] bg-gray-100 p-4 border-r border-gray-300 overflow-y-auto">
-//             {/* <h3 className="font-bold text-lg mb-4 text-gray-700">Tables</h3> */}
-
-//             <div className="grid grid-cols-2 gap-3">
-//                 {tables.map(num => {
-//                     const total = getTotal(num);
-//                     const isSelected = selectedTable === num;
-
-//                     return (
-//                         <button
-//                             key={num}
-//                             onClick={() => onSelectTable(num)}
-//                             className={`aspect-square rounded-xl border-2 p-3 flex flex-col items-center justify-center transition-all
-//                 ${isSelected
-//                                     ? 'bg-orange-500 text-white border-orange-500 scale-105'
-//                                     : 'bg-white border-gray-300 hover:bg-gray-200'}
-//               `}
-//                         >
-//                             <span className="text-lg font-bold">T{num}</span>
-
-//                             {total > 0 ? (
-//                                 <span className="text-xl font-bold mt-2">
-//                                     ₹{total}
-//                                 </span>
-//                             ) : (
-//                                 <span className="text-sm text-gray-400 mt-2">Empty</span>
-//                             )}
-//                         </button>
-//                     );
-//                 })}
-//             </div>
-//         </div>
-//     );
-// };
 
 
 const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
@@ -364,22 +315,29 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
 
 
 
+// desktop sidebar for category filtering
 const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => (
     <div className="hidden md:block w-[28%] bg-gray-100 p-3 border-r border-gray-400 overflow-y-auto">
         <div className="font-bold mb-3 text-gray-600">Categories</div>
+
         {categories.map(cat => (
             <button
                 key={cat}
                 onClick={() => onSelectCategory(cat)}
-                className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === cat ? 'bg-gray-700 text-white' : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
+                className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === cat
+                    ? 'bg-gray-700 text-white'
+                    : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
                     }`}
             >
                 {cat}
             </button>
         ))}
+
         <button
             onClick={() => onSelectCategory(null)}
-            className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === null ? 'bg-gray-700 text-white' : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
+            className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === null
+                ? 'bg-gray-700 text-white'
+                : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
                 }`}
         >
             All Items
@@ -387,49 +345,54 @@ const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => 
     </div>
 );
 
-/* --- BillSection Component --- */
+// fixed bill section on desktop
 const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill }) => (
     <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
-        {/* Title */}
+        {/* current table info */}
         <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
             {selectedTable ? `Bill - Table ${selectedTable}` : 'Bill - Select a Table'}
         </h3>
 
-        {/* 🔹 scrollable item list */}
-        <div className="bill-scroll-area mb-3">
-    {currentBill.map((item, idx) => (
-        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
-            <span className="flex-1 text-gray-800">{item.name} ({item.portion})</span>
+        {/* scrollable bill items */}
+        <div className="bill-scroll-area mb-3 overflow-y-auto">
+            {currentBill.map((item, idx) => (
+                <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
+                    <span className="flex-1 text-gray-800">
+                        {item.name} ({item.portion})
+                    </span>
 
-            <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                            className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"
+                        >
+                            <Minus size={14} />
+                        </button>
 
-                {/* 🔹 updated qty input */}
-                <input
-                    type="text"
-                    inputMode="numeric"       // numeric keypad on iPad / mobile
-                    pattern="[0-9]*"          // only allow digits
-                    value={item.qty}
-                    onFocus={(e) => e.target.select()} // select old value instantly
-                    onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, ""); // remove non-numbers
-                        onChangeQuantity(idx, val);
-                    }}
-                    className="w-14 px-2 py-1 text-right bg-gray-200 border border-gray-400 rounded text-sm"
-                />
+                        <span className="w-6 text-center font-bold">
+                            {item.qty}
+                        </span>
 
-                <span className="min-w-15 text-right font-bold text-gray-800">
-                    ₹{item.price * item.qty}
-                </span>
-            </div>
+                        <button
+                            onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                            className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center hover:bg-orange-600"
+                        >
+                            <Plus size={14} />
+                        </button>
+
+                        <span className="min-w-15 text-right font-bold text-gray-800">
+                            ₹{item.price * item.qty}
+                        </span>
+                    </div>
+
+                </div>
+            ))}
         </div>
-    ))}
-</div>
 
-
-        {/* 🔹 Total + Buttons always visible */}
-        <div className="mt-auto">
-            <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3 shadow-lg">
+        {/* total + actions pinned at bottom */}
+        <div className="bill-buttons bg-white pt-2 pb-2 shadow-[0_-2px_8px_rgba(0,0,0,0.1)] sticky bottom-0 z-10">
+            <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3">
                 Total: ₹{total}
             </div>
 
@@ -440,6 +403,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                 >
                     Print Bill
                 </button>
+
                 <button
                     onClick={onClearBill}
                     className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all"
@@ -448,35 +412,43 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                 </button>
             </div>
         </div>
-
     </div>
 );
-
 
 
 // Main App
 export default function RestaurantBillGenerator() {
     const tables = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    // bills per table -> { tableNo: items[] }
     const [bills, setBills] = useState({});
+
+    // active table for ordering
     const [selectedTable, setSelectedTable] = useState(null);
+
+    // category filter
     const [selectedCategory, setSelectedCategory] = useState(null);
+
+    // mobile ui states
     const [showTableModal, setShowTableModal] = useState(false);
     const [showCartDrawer, setShowCartDrawer] = useState(false);
 
+    // pwa install handling
     const [installPrompt, setInstallPrompt] = useState(null);
     const [isInstalled, setIsInstalled] = useState(false);
 
+    // app state
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState(() => {
-        return localStorage.getItem('activeTab') || 'home';
-    });
+    const [activeTab, setActiveTab] = useState(localStorage.getItem('activeTab') || 'home');
+
+    // used when opening table from all tables view
     const [viewingTableFromAllTables, setViewingTableFromAllTables] = useState(null);
+
+    // offline handling
     const [pendingSaves, setPendingSaves] = useState([]);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
 
     const selectedTableRef = useRef(null);
     const viewingTableRef = useRef(null);
-
 
     useEffect(() => {
         selectedTableRef.current = selectedTable;
@@ -485,7 +457,6 @@ export default function RestaurantBillGenerator() {
     useEffect(() => {
         viewingTableRef.current = viewingTableFromAllTables;
     }, [viewingTableFromAllTables]);
-
 
 
     useEffect(() => {
@@ -550,7 +521,8 @@ export default function RestaurantBillGenerator() {
         };
     }, []);
 
-    // NEW: Real-time subscription to bill changes
+    /* Supabase Section */
+    // Real-time subscription to bill changes
     useEffect(() => {
         const channel = supabase
             .channel('bills-realtime')
@@ -610,7 +582,6 @@ export default function RestaurantBillGenerator() {
         setPendingSaves([]);
         alert('✅ Synced offline changes!');
     };
-
 
 
     const loadBillsFromSupabase = async () => {
@@ -733,7 +704,10 @@ export default function RestaurantBillGenerator() {
     const categories = [...new Set(menuItems.map(item => item.category))];
     const filteredMenu = selectedCategory ? menuItems.filter(i => i.category === selectedCategory) : menuItems;
 
-    // Updated addItemToBill with optimistic updates
+
+    // adds an item to the selected table's bill
+    // uses optimistic update so UI feels instant
+
     const addItemToBill = async (name, portion, price) => {
         if (!selectedTable) {
             setShowTableModal(true);
@@ -742,7 +716,11 @@ export default function RestaurantBillGenerator() {
 
         const newBills = { ...bills };
         const bill = [...newBills[selectedTable]];
-        const existing = bill.find(b => b.name === name && b.portion === portion);
+
+        // check if same item + portion already exists
+        const existing = bill.find(
+            b => b.name === name && b.portion === portion
+        );
 
         if (existing) {
             existing.qty++;
@@ -752,13 +730,15 @@ export default function RestaurantBillGenerator() {
 
         newBills[selectedTable] = bill;
 
-        // Update state immediately (optimistic update)
+        // update UI immediately 
         setBills(newBills);
 
-        // Try to save to Supabase (will queue if offline)
+        // sync with backend (queued if offline)
         await saveBillToSupabase(selectedTable, bill);
     };
 
+
+    // updates quantity or removes item if qty goes to 0
     const changeQuantity = async (index, value) => {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
@@ -767,6 +747,7 @@ export default function RestaurantBillGenerator() {
         const bill = [...newBills[tableToUpdate]];
         const qty = parseInt(value);
 
+        // remove item if qty is invalid or zero
         if (isNaN(qty) || qty <= 0) {
             bill.splice(index, 1);
         } else {
@@ -776,9 +757,12 @@ export default function RestaurantBillGenerator() {
         newBills[tableToUpdate] = bill;
         setBills(newBills);
 
+        // persist changes
         await saveBillToSupabase(tableToUpdate, bill);
     };
 
+
+    // clears current table bill and moves it to completed_bills
     const clearBill = async () => {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
@@ -791,15 +775,19 @@ export default function RestaurantBillGenerator() {
 
         if (window.confirm(`Clear all items for Table ${tableToUpdate}?`)) {
             try {
-                const total = billItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+                const total = billItems.reduce(
+                    (sum, item) => sum + item.price * item.qty,
+                    0
+                );
                 const now = new Date();
 
+                // save completed bill for analytics
                 const { error: insertError } = await supabase
                     .from('completed_bills')
                     .insert({
                         table_number: tableToUpdate,
                         items: billItems,
-                        total: total,
+                        total,
                         completed_at: now.toISOString(),
                         day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' }),
                         hour_of_day: now.getHours(),
@@ -808,6 +796,7 @@ export default function RestaurantBillGenerator() {
 
                 if (insertError) throw insertError;
 
+                // mark active bill as cleared
                 const { error: updateError } = await supabase
                     .from('bills')
                     .update({ status: 'cleared' })
@@ -816,11 +805,11 @@ export default function RestaurantBillGenerator() {
 
                 if (updateError) throw updateError;
 
+                // reset local state
                 setBills(prev => ({ ...prev, [tableToUpdate]: [] }));
                 setShowCartDrawer(false);
                 setViewingTableFromAllTables(null);
 
-                // alert('Bill cleared and saved for analytics!');
             } catch (error) {
                 console.error('Error clearing bill:', error);
                 alert('Failed to clear bill. Please try again.');
@@ -828,28 +817,89 @@ export default function RestaurantBillGenerator() {
         }
     };
 
+
+    // prints receipt using browser print
     const printBill = async () => {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
 
         const now = new Date();
         let total = 0;
-        const billRows = bills[tableToUpdate].map(b => {
-            const lineTotal = b.price * b.qty;
-            total += lineTotal;
-            return `<tr><td>${b.name} (${b.portion})</td><td style="text-align:center;">${b.qty}</td><td style="text-align:right;">${b.price.toFixed(2)}</td><td style="text-align:right;">${lineTotal.toFixed(2)}</td></tr>`;
-        }).join("");
 
-        const printContent = `<html><head><title>Receipt</title><style>@media print{body{font-family:monospace;font-size:12px;width:80mm;margin:0;padding:5px}h2,p{margin:4px 0;text-align:center}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:3px 0}th{text-align:left;border-bottom:1px dotted #000}td{border-bottom:1px dotted #ccc}tfoot td{font-weight:bold;border-top:1px dotted #000;padding-top:6px}.right{text-align:right}.center{text-align:center}}@page{margin:0}</style></head><body><h2>Anand Fast Food</h2><p>Phone: 123-456-7890</p><hr><p><strong>Table:</strong> ${tableToUpdate} | ${now.toLocaleDateString()} ${now.toLocaleTimeString()}</p><table><thead><tr><th>Item</th><th class="center">Qty</th><th class="right">Price</th><th class="right">Total</th></tr></thead><tbody>${billRows}</tbody><tfoot><tr><td colspan="3" class="right">Total:</td><td class="right">${total.toFixed(2)}</td></tr></tfoot></table><hr><p>Thank you!</p></body></html>`;
+        // build receipt rows
+        const billRows = bills[tableToUpdate]
+            .map(b => {
+                const lineTotal = b.price * b.qty;
+                total += lineTotal;
+                return `
+        <tr>
+          <td>${b.name} (${b.portion})</td>
+          <td style="text-align:center;">${b.qty}</td>
+          <td style="text-align:right;">${b.price.toFixed(2)}</td>
+          <td style="text-align:right;">${lineTotal.toFixed(2)}</td>
+        </tr>`;
+            })
+            .join('');
 
-        const w = window.open("", "_blank", "width=320,height=480");
+        const printContent = `
+    <html>
+      <head>
+        <title>Receipt</title>
+        <style>
+          @media print {
+            body {
+              font-family: monospace;
+              font-size: 12px;
+              width: 80mm;
+              margin: 0;
+              padding: 5px;
+            }
+            h2, p { margin: 4px 0; text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { border-bottom: 1px dotted #000; text-align: left; }
+            td { border-bottom: 1px dotted #ccc; }
+            tfoot td { font-weight: bold; border-top: 1px dotted #000; }
+          }
+          @page { margin: 0 }
+        </style>
+      </head>
+      <body>
+        <h2>Anand Fast Food</h2>
+        <p><strong>Table:</strong> ${tableToUpdate}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>${billRows}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="text-align:right;">Total</td>
+              <td style="text-align:right;">${total.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <p>Thank you!</p>
+      </body>
+    </html>
+  `;
+
+        const w = window.open('', '_blank', 'width=320,height=480');
         w.document.write(printContent);
         w.document.close();
-        setTimeout(() => { w.print(); w.close(); }, 300);
+        setTimeout(() => {
+            w.print();
+            w.close();
+        }, 300);
 
         setShowCartDrawer(false);
         setViewingTableFromAllTables(null);
     };
+
 
     // Handle table click from All Tables grid
     const handleAllTablesTableClick = (tableNum) => {
@@ -938,7 +988,6 @@ export default function RestaurantBillGenerator() {
                 {activeTab === 'home' ? (
                     <>
                         {/* Desktop Layout */}
-                        {/* <TableSelector tables={tables} selectedTable={selectedTable} onSelectTable={setSelectedTable} /> */}
                         <DesktopTableGrid
                             tables={tables}
                             bills={bills}
@@ -979,15 +1028,13 @@ export default function RestaurantBillGenerator() {
                             </div>
 
                             {/* Menu Grid */}
-                            {/* <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto bg-white"> */}
-                            <div className="
-    flex-1 
-    grid grid-cols-2 md:grid-cols-4 
-    gap-3 md:gap-4 
-    p-3 md:p-4 
-    overflow-y-auto bg-white
-    max-w-225 mx-auto
-">
+                            <div className="flex-1 
+                                grid grid-cols-2 md:grid-cols-4 
+                                gap-3 md:gap-4 
+                                p-3 md:p-4 
+                                overflow-y-auto bg-white
+                                max-w-225 mx-auto"
+                            >
 
                                 {filteredMenu.map((item, idx) => (
                                     <MenuItem
@@ -1011,7 +1058,7 @@ export default function RestaurantBillGenerator() {
                         />
                     </>
                 ) : (
-                    /* All Tables Tab */
+                    /* All Tables Tab - Mobile */
                     <AllTablesGrid
                         tables={tables}
                         bills={bills}
