@@ -72,7 +72,7 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
             <button
                 key={cat}
                 onClick={() => onSelectCategory(cat)}
-                className={`px-4 py-2 rounded-full ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-gray-100'
+                className={`px-4 py-2 rounded-full whitespace-nowrap ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-gray-100'
                     }`}
             >
                 {cat}
@@ -117,7 +117,7 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
                         <button
                             key={i}
                             onClick={() => onAddItem(item.name, opt.portion, opt.price)}
-                            className="flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold"
+                            className="flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-200 active:bg-orange-100"
                         >
                             {opt.portion} ₹{opt.price}
                         </button>
@@ -156,18 +156,29 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                             </div>
 
                             <div className="flex items-center gap-3">
-                                <button onClick={() => onChangeQuantity(idx, item.qty - 1)} className="bg-gray-100 p-2 rounded">
+                                <button
+                                    onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                                    className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
+                                >
                                     <Minus size={16} />
                                 </button>
 
-                                <span className="font-bold w-6 text-center">{item.qty}</span>
+                                <span className="font-bold w-8 text-center text-gray-800">
+                                    {item.qty}
+                                </span>
 
-                                <button onClick={() => onChangeQuantity(idx, item.qty + 1)} className="bg-orange-500 text-white p-2 rounded">
+                                <button
+                                    onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                                    className="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"
+                                >
                                     <Plus size={16} />
                                 </button>
 
-                                <span className="font-bold w-16 text-right">₹{item.price * item.qty}</span>
+                                <span className="font-bold w-16 text-right text-gray-800">
+                                    ₹{item.price * item.qty}
+                                </span>
                             </div>
+
                         </div>
                     ))
                 )}
@@ -180,14 +191,29 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                 </div>
 
                 <div className="flex gap-3">
-                    <button onClick={onClearBill} className="flex-1 bg-red-500 text-white py-3 rounded-xl font-semibold">
-                        <Trash2 size={20} /> Clear
+                    <button
+                        onClick={onClearBill}
+                        className="flex-1 py-3 rounded-xl font-bold 
+               bg-red-500 text-white 
+               active:bg-red-600
+               shadow-md flex items-center justify-center gap-2"
+                    >
+                        <Trash2 size={20} />
+                        Clear Bill
                     </button>
 
-                    <button onClick={onPrintBill} className="flex-1 bg-gray-800 text-white py-3 rounded-xl font-semibold">
-                        <Printer size={20} /> Print
+                    <button
+                        onClick={onPrintBill}
+                        className="flex-1 py-3 rounded-xl font-bold 
+               bg-gray-800 text-white 
+               active:bg-black
+               shadow-md flex items-center justify-center gap-2"
+                    >
+                        <Printer size={20} />
+                        Print Bill
                     </button>
                 </div>
+
             </div>
         </div>
     </div>
@@ -289,7 +315,7 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
                                     ? 'bg-orange-500 text-white border-orange-500 shadow-lg scale-[1.04]'
                                     : total > 0
                                         ? 'bg-orange-50 text-gray-800 border-orange-200 shadow-sm hover:bg-orange-100'
-                                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100 shadow-sm'
+                                        : 'bg-gray-50 text-gray-500 border-gray-300 hover:bg-gray-300 shadow-sm'
                                 }
                             `}
                         >
