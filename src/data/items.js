@@ -5,7 +5,7 @@ import expavImg from '../assets/expav.jpg';
 import bhajiImg from '../assets/bhaji.jpeg';
 import masalaPavImg from '../assets/masala-pav.jpg';
 import manchImg from '../assets/Manch.jpeg';
-import tManchImg from '../assets/TManch.jpg';
+import tManchImg from '../assets/Tadka.jpg';
 import vegchilliImg from '../assets/vegchilli.jpeg';
 import gManchImg from '../assets/GManch.jpeg';
 import sManchImg from '../assets/SManch.jpg';
