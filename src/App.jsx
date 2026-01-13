@@ -341,35 +341,37 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
 
 
 
-// desktop sidebar for category filtering
-const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => (
-    <div className="hidden md:block w-[28%] bg-gray-100 p-3 border-r border-gray-400 overflow-y-auto">
-        <div className="font-bold mb-3 text-gray-600">Categories</div>
+// // desktop sidebar for category filtering
+// const CategorySidebar = ({ categories, selectedCategory, onSelectCategory }) => (
+//     <div className="hidden md:block w-[28%] bg-gray-100 p-3 border-r border-gray-400 overflow-y-auto">
+//         <div className="font-bold mb-3 text-gray-600">Categories</div>
 
-        {categories.map(cat => (
-            <button
-                key={cat}
-                onClick={() => onSelectCategory(cat)}
-                className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === cat
-                    ? 'bg-gray-700 text-white'
-                    : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
-                    }`}
-            >
-                {cat}
-            </button>
-        ))}
+//         {categories.map(cat => (
+//             <button
+//                 key={cat}
+//                 onClick={() => onSelectCategory(cat)}
+//                 className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === cat
+//                     ? 'bg-gray-700 text-white'
+//                     : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
+//                     }`}
+//             >
+//                 {cat}
+//             </button>
+//         ))}
 
-        <button
-            onClick={() => onSelectCategory(null)}
-            className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === null
-                ? 'bg-gray-700 text-white'
-                : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
-                }`}
-        >
-            All Items
-        </button>
-    </div>
-);
+//         <button
+//             onClick={() => onSelectCategory(null)}
+//             className={`block w-full p-2 mb-1 rounded-lg text-sm transition-all ${selectedCategory === null
+//                 ? 'bg-gray-700 text-white'
+//                 : 'bg-white text-gray-800 hover:bg-gray-400 hover:text-white'
+//                 }`}
+//         >
+//             All Items
+//         </button>
+//     </div>
+// );
+
+
 
 // fixed bill section on desktop
 const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill }) => (
@@ -1059,7 +1061,7 @@ export default function RestaurantBillGenerator() {
                                 gap-3 md:gap-4 
                                 p-3 md:p-4 
                                 overflow-y-auto bg-white
-                                max-w-225 mx-auto"
+                                w-full"
                             >
 
                                 {filteredMenu.map((item, idx) => (
