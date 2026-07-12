@@ -107,7 +107,7 @@ export const UI_STRINGS = {
 
 // Category names are proper nouns already used in the current menu.
 export const CATEGORY_MR = {
-    'Dabeli & Pavbhaji': 'डबेली आणि पावभाजी',
+    'Dabeli & Pavbhaji': 'दाबेली आणि पावभाजी',
     'Manchurian': 'मंचुरियन',
     'Rice': 'राईस',
     'Noodles': 'नूडल्स',
@@ -120,7 +120,7 @@ export const CATEGORY_MR = {
 // Best-effort Marathi (Devanagari) names for existing menu items.
 // Any item not listed here (e.g. a newly added custom item) simply falls back to its English name.
 export const ITEM_NAME_MR = {
-    'Dabeli': 'डबेली',
+    'Dabeli': 'दाबेली',
     'Pavbhaji': 'पावभाजी',
     'Extra Pav': 'एक्स्ट्रा पाव',
     'Only Bhaji': 'फक्त भाजी',
