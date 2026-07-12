@@ -1,27 +1,51 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, EyeOff, Eye, UtensilsCrossed } from 'lucide-react';
 import { supabase } from './config/supabase';
 import menuItems from './data/items';
+import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
+import {
+    BRANCH_OPTIONS,
+    getSavedBranch,
+    saveBranch,
+    branchLabel,
+    getSavedLanguage,
+    saveLanguage,
+    fetchMenuSettings,
+    saveMenuSettings,
+    mergeMenu,
+    priceKey,
+    emptyMenuSettings,
+} from './lib/branchMenu';
 
 
 /* ---------------- Header ---------------- */
 
-// top bar with title + cart (mobile)
-const Header = ({ onCartClick, cartItemCount, currentTab }) => (
+// top bar with title + cart (mobile) / settings (all tables)
+const Header = ({ onCartClick, cartItemCount, currentTab, onSettingsClick, lang }) => (
     <header className="sticky top-0 z-50 bg-orange-500 text-white py-3 px-4 shadow-lg">
         <div className="flex justify-between items-center">
-            <h1 className="text-lg md:text-2xl font-bold">Anand Fast Food</h1>
+            <h1 className="text-lg md:text-2xl font-bold">{t('appName', lang)}</h1>
 
-            {currentTab === 'home' && (
-                <button onClick={onCartClick} className="relative md:hidden bg-orange-600 p-2 rounded-full">
-                    <ShoppingCart size={24} />
-                    {cartItemCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
-                            {cartItemCount}
-                        </span>
-                    )}
+            <div className="flex items-center gap-2">
+                {currentTab === 'home' && (
+                    <button onClick={onCartClick} className="relative md:hidden bg-orange-600 p-2 rounded-full">
+                        <ShoppingCart size={24} />
+                        {cartItemCount > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                                {cartItemCount}
+                            </span>
+                        )}
+                    </button>
+                )}
+
+                <button
+                    onClick={onSettingsClick}
+                    aria-label={t('settings', lang)}
+                    className="bg-orange-600 p-2 rounded-full"
+                >
+                    <Settings size={22} />
                 </button>
-            )}
+            </div>
         </div>
     </header>
 );
@@ -29,11 +53,11 @@ const Header = ({ onCartClick, cartItemCount, currentTab }) => (
 /* ---------------- Table Selector (Mobile) ---------------- */
 
 // modal to select table before ordering
-const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose }) => (
+const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose, lang }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center">
         <div className="bg-white w-full md:w-96 rounded-t-2xl max-h-[70vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
-                <h2 className="text-xl font-bold">Select Table</h2>
+                <h2 className="text-xl font-bold">{t('selectTable', lang)}</h2>
                 <button onClick={onClose}><X size={24} /></button>
             </div>
 
@@ -58,14 +82,14 @@ const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose }) =
 /* ---------------- Category Filter ---------------- */
 
 // horizontal category filter (mobile)
-const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
+const CategoryPills = ({ categories, selectedCategory, onSelectCategory, lang }) => (
     <div className="sticky top-0 z-40 bg-white border-b px-4 py-3 flex gap-2 overflow-x-auto">
         <button
             onClick={() => onSelectCategory(null)}
             className={`px-4 py-2 rounded-full ${selectedCategory === null ? 'bg-orange-500 text-white' : 'bg-gray-100'
                 }`}
         >
-            All
+            {t('all', lang)}
         </button>
 
         {categories.map(cat => (
@@ -75,7 +99,7 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
                 className={`px-4 py-2 rounded-full whitespace-nowrap ${selectedCategory === cat ? 'bg-orange-500 text-white' : 'bg-gray-100'
                     }`}
             >
-                {cat}
+                {translateCategory(cat, lang)}
             </button>
         ))}
     </div>
@@ -84,9 +108,10 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory }) => (
 /* ---------------- Menu Item Card ---------------- */
 
 // tap card = default portion, buttons = other portions
-const MenuItem = ({ item, onAddItem, currentQty }) => {
+const MenuItem = ({ item, onAddItem, currentQty, lang }) => {
     const defaultOption = item.options[0]; // most ordered portion
     const hasMultipleOptions = item.options.length > 1;
+    const displayName = translateItemName(item.name, lang);
 
     return (
         <div className="bg-white rounded-xl border border-gray-300 overflow-hidden flex flex-col h-60">
@@ -94,10 +119,16 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
                 onClick={() => onAddItem(item.name, defaultOption.portion, defaultOption.price)}
                 className="cursor-pointer flex-1 flex flex-col"
             >
-                <img src={item.img} alt={item.name} className="w-full h-28 object-cover" />
+                {item.img ? (
+                    <img src={item.img} alt={displayName} className="w-full h-28 object-cover" />
+                ) : (
+                    <div className="w-full h-28 bg-orange-50 flex items-center justify-center">
+                        <UtensilsCrossed size={32} className="text-orange-300" />
+                    </div>
+                )}
 
                 <div className="p-3 flex flex-col justify-between flex-1">
-                    <h3 className="font-bold text-sm line-clamp-2">{item.name}</h3>
+                    <h3 className="font-bold text-sm line-clamp-2">{displayName}</h3>
 
                     <div className="flex justify-between items-center">
                         <span className="text-orange-600 font-bold">₹{defaultOption.price}</span>
@@ -119,7 +150,7 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
                             onClick={() => onAddItem(item.name, opt.portion, opt.price)}
                             className="flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-200 active:bg-orange-100"
                         >
-                            {opt.portion} ₹{opt.price}
+                            {translatePortion(opt.portion, lang)} ₹{opt.price}
                         </button>
                     ))}
                 </div>
@@ -131,12 +162,12 @@ const MenuItem = ({ item, onAddItem, currentQty }) => {
 /* ---------------- Cart Drawer (Mobile) ---------------- */
 
 // bottom drawer for current table bill
-const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose }) => (
+const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, lang }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
         <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
                 <h2 className="text-xl font-bold">
-                    {selectedTable ? `Table ${selectedTable}` : 'Cart'}
+                    {selectedTable ? `${t('tableLabel', lang)} ${selectedTable}` : t('cart', lang)}
                 </h2>
                 <button onClick={onClose}><X size={24} /></button>
             </div>
@@ -145,14 +176,21 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                 {currentBill.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                         <ShoppingCart size={48} className="mx-auto mb-2 opacity-50" />
-                        <p>No items added</p>
+                        <p>{t('noItemsAdded', lang)}</p>
                     </div>
                 ) : (
                     currentBill.map((item, idx) => (
                         <div key={idx} className="flex justify-between items-center py-3 border-b">
                             <div>
-                                <p className="font-medium">{item.name}</p>
-                                <p className="text-sm text-gray-500">{item.portion}</p>
+                                <p className="font-medium">
+                                    <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
+                                    {translateItemName(item.name, lang)}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                    {translatePortion(item.portion, lang)}
+                                    <span className="mx-1">·</span>
+                                    <span className="text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
+                                </p>
                             </div>
 
                             <div className="flex items-center gap-3">
@@ -186,7 +224,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 
             <div className="border-t p-4 space-y-3">
                 <div className="flex justify-between font-bold text-xl">
-                    <span>Total</span>
+                    <span>{t('total', lang)}</span>
                     <span className="text-orange-600">₹{total}</span>
                 </div>
 
@@ -199,7 +237,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                shadow-md flex items-center justify-center gap-2"
                     >
                         <Trash2 size={20} />
-                        Clear Bill
+                        {t('clearBill', lang)}
                     </button>
 
                     <button
@@ -210,7 +248,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                shadow-md flex items-center justify-center gap-2"
                     >
                         <Printer size={20} />
-                        Print Bill
+                        {t('printBill', lang)}
                     </button>
                 </div>
 
@@ -262,7 +300,7 @@ const AllTablesGrid = ({ tables, bills, onTableClick }) => {
 };
 
 // Bottom Navigation to switch between Home and All tables grid view
-const BottomNavigation = ({ activeTab, onTabChange }) => (
+const BottomNavigation = ({ activeTab, onTabChange, lang }) => (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
         <div className="grid grid-cols-2">
             <button
@@ -273,7 +311,7 @@ const BottomNavigation = ({ activeTab, onTabChange }) => (
                     }`}
             >
                 <Home size={24} />
-                <span className="text-xs mt-1 font-medium">Home</span>
+                <span className="text-xs mt-1 font-medium">{t('home', lang)}</span>
             </button>
 
             <button
@@ -284,7 +322,7 @@ const BottomNavigation = ({ activeTab, onTabChange }) => (
                     }`}
             >
                 <Grid3x3 size={24} />
-                <span className="text-xs mt-1 font-medium">All Tables</span>
+                <span className="text-xs mt-1 font-medium">{t('allTables', lang)}</span>
             </button>
         </div>
     </div>
@@ -374,12 +412,12 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
 
 
 // fixed bill section on desktop
-const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill }) => (
+const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, lang }) => (
     <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
         {/* current table info */}
         <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
-            {selectedTable ? `Bill - Table ${selectedTable}` : 'Bill - Select a Table'}
+            {selectedTable ? `${t('billFor', lang)} ${selectedTable}` : t('billSelectTable', lang)}
         </h3>
 
         {/* scrollable bill items */}
@@ -387,7 +425,9 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
             {currentBill.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
                     <span className="flex-1 text-gray-800">
-                        {item.name} ({item.portion})
+                        <span className="text-gray-400 mr-1">{idx + 1}.</span>
+                        {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
+                        <span className="block text-xs text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
                     </span>
 
                     <div className="flex items-center gap-3">
@@ -421,7 +461,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
         {/* total + actions pinned at bottom */}
         <div className="bill-buttons bg-white pt-2 pb-2 shadow-[0_-2px_8px_rgba(0,0,0,0.1)] sticky bottom-0 z-10">
             <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3">
-                Total: ₹{total}
+                {t('total', lang)}: ₹{total}
             </div>
 
             <div className="flex gap-4">
@@ -429,19 +469,365 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                     onClick={onPrintBill}
                     className="flex-1 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all"
                 >
-                    Print Bill
+                    {t('printBill', lang)}
                 </button>
 
                 <button
                     onClick={onClearBill}
                     className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all"
                 >
-                    Clear Bill
+                    {t('clearBill', lang)}
                 </button>
             </div>
         </div>
     </div>
 );
+
+
+/* ---------------- Branch Select Modal ---------------- */
+
+const BranchSelectModal = ({ lang, onSelect }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-center justify-center p-4">
+        <div className="bg-white w-full max-w-sm rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-center mb-2">{t('selectBranch', lang)}</h2>
+            <p className="text-sm text-gray-500 text-center mb-6">{t('selectBranchSubtitle', lang)}</p>
+
+            <div className="space-y-3">
+                {BRANCH_OPTIONS.map(branch => (
+                    <button
+                        key={branch.id}
+                        onClick={() => onSelect(branch.id)}
+                        className="w-full py-4 rounded-xl bg-orange-50 border border-orange-200 text-orange-700 font-bold text-lg active:bg-orange-100 flex items-center justify-center gap-2"
+                    >
+                        <Store size={20} />
+                        {branch.label[lang] || branch.label.en}
+                    </button>
+                ))}
+            </div>
+        </div>
+    </div>
+);
+
+/* ---------------- Settings Modal ---------------- */
+
+const SettingsModal = ({ lang, onChangeLang, branch, onOpenMenuManager, onChangeBranch, onClose }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center">
+        <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+                <h2 className="text-xl font-bold">{t('settings', lang)}</h2>
+                <button onClick={onClose}><X size={24} /></button>
+            </div>
+
+            <div className="p-4 space-y-5 overflow-y-auto">
+                {/* Language */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2 text-gray-700 font-semibold">
+                        <Globe size={18} />
+                        {t('language', lang)}
+                    </div>
+                    <div className="flex gap-2">
+                        {LANGUAGES.map(l => (
+                            <button
+                                key={l.code}
+                                onClick={() => onChangeLang(l.code)}
+                                className={`flex-1 py-2 rounded-lg font-bold border ${lang === l.code
+                                    ? 'bg-orange-500 text-white border-orange-500'
+                                    : 'bg-gray-50 text-gray-700 border-gray-200'
+                                    }`}
+                            >
+                                {l.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Update Menu */}
+                <button
+                    onClick={onOpenMenuManager}
+                    className="w-full flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-200 active:bg-gray-100"
+                >
+                    <span className="flex items-center gap-2 font-semibold text-gray-800">
+                        <UtensilsCrossed size={18} />
+                        {t('updateMenu', lang)}
+                    </span>
+                    <span className="text-gray-400">›</span>
+                </button>
+
+                {/* Branch */}
+                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
+                    <p className="text-sm text-gray-500 mb-1">{t('currentBranch', lang)}</p>
+                    <p className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        <Store size={18} />
+                        {branchLabel(branch, lang)}
+                    </p>
+                    <button
+                        onClick={onChangeBranch}
+                        className="w-full py-2 rounded-lg bg-orange-100 text-orange-700 font-bold"
+                    >
+                        {t('switchBranch', lang)}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+/* ---------------- Menu Manager Modal (Update Menu) ---------------- */
+
+const MenuManagerModal = ({ lang, mergedMenu, categories, menuSettings, onSaveSettings, onClose }) => {
+    const [localSettings, setLocalSettings] = useState(menuSettings);
+    const [saving, setSaving] = useState(false);
+    const [editingPrice, setEditingPrice] = useState(null); // `${name}||${portion}`
+    const [priceDraft, setPriceDraft] = useState('');
+
+    const [showAddForm, setShowAddForm] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [newCategory, setNewCategory] = useState(categories[0] || '');
+    const [newPortions, setNewPortions] = useState([{ portion: '', price: '' }]);
+
+    const persist = async (next) => {
+        setLocalSettings(next);
+        setSaving(true);
+        try {
+            await onSaveSettings(next);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const startEditPrice = (name, portion, currentPrice) => {
+        setEditingPrice(priceKey(name, portion));
+        setPriceDraft(String(currentPrice));
+    };
+
+    const confirmEditPrice = async (name, portion) => {
+        const value = parseFloat(priceDraft);
+        if (isNaN(value) || value < 0) {
+            setEditingPrice(null);
+            return;
+        }
+        const next = {
+            ...localSettings,
+            price_overrides: { ...localSettings.price_overrides, [priceKey(name, portion)]: value },
+        };
+        setEditingPrice(null);
+        await persist(next);
+    };
+
+    const toggleHidden = async (name) => {
+        const hidden = new Set(localSettings.hidden_items || []);
+        if (hidden.has(name)) hidden.delete(name); else hidden.add(name);
+        await persist({ ...localSettings, hidden_items: Array.from(hidden) });
+    };
+
+    const removeCustomItem = async (name) => {
+        if (!window.confirm(t('confirmDeleteCustomItem', lang))) return;
+        const next = {
+            ...localSettings,
+            custom_items: (localSettings.custom_items || []).filter(i => i.name !== name),
+        };
+        await persist(next);
+    };
+
+    const addPortionRow = () => setNewPortions(p => [...p, { portion: '', price: '' }]);
+    const updatePortionRow = (idx, field, value) => {
+        setNewPortions(p => p.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+    };
+    const removePortionRow = (idx) => setNewPortions(p => p.filter((_, i) => i !== idx));
+
+    const submitNewItem = async () => {
+        const cleanPortions = newPortions
+            .map(p => ({ portion: p.portion.trim(), price: parseFloat(p.price) }))
+            .filter(p => p.portion && !isNaN(p.price) && p.price >= 0);
+
+        if (!newName.trim() || !newCategory.trim() || cleanPortions.length === 0) {
+            alert(t('fillAllFields', lang));
+            return;
+        }
+
+        const newItem = {
+            name: newName.trim(),
+            category: newCategory.trim(),
+            img: null,
+            options: cleanPortions,
+        };
+
+        const next = {
+            ...localSettings,
+            custom_items: [...(localSettings.custom_items || []), newItem],
+        };
+        await persist(next);
+
+        setNewName('');
+        setNewPortions([{ portion: '', price: '' }]);
+        setShowAddForm(false);
+    };
+
+    const hiddenSet = new Set(localSettings.hidden_items || []);
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[55] flex items-end md:items-center justify-center">
+            <div className="bg-white w-full md:w-[32rem] rounded-t-2xl md:rounded-2xl max-h-[90vh] flex flex-col">
+                <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+                    <h2 className="text-xl font-bold flex items-center gap-2">
+                        <UtensilsCrossed size={20} />
+                        {t('updateMenu', lang)}
+                        {saving && <span className="text-xs font-normal text-gray-400">({t('savingChanges', lang)})</span>}
+                    </h2>
+                    <button onClick={onClose}><X size={24} /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    <p className="text-xs text-gray-500">{t('priceOverrideNote', lang)}</p>
+
+                    {mergedMenu.map((item) => (
+                        <div
+                            key={item.name}
+                            className={`border rounded-xl p-3 ${hiddenSet.has(item.name) ? 'opacity-50 border-gray-200' : 'border-gray-300'}`}
+                        >
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <p className="font-bold text-gray-800">
+                                        {translateItemName(item.name, lang)}
+                                        {item.isCustom && (
+                                            <span className="ml-2 text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full align-middle">
+                                                {t('addNewItem', lang)}
+                                            </span>
+                                        )}
+                                    </p>
+                                    <p className="text-xs text-gray-400">{translateCategory(item.category, lang)}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => toggleHidden(item.name)}
+                                        className="p-2 rounded-full bg-gray-100"
+                                        title={hiddenSet.has(item.name) ? t('unhide', lang) : t('hide', lang)}
+                                    >
+                                        {hiddenSet.has(item.name) ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                    {item.isCustom && (
+                                        <button
+                                            onClick={() => removeCustomItem(item.name)}
+                                            className="p-2 rounded-full bg-red-50 text-red-600"
+                                            title={t('deleteItem', lang)}
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {item.options.map((opt) => {
+                                    const key = priceKey(item.name, opt.portion);
+                                    const isEditing = editingPrice === key;
+                                    return (
+                                        <div key={key} className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-sm">
+                                            <span className="text-gray-600">{translatePortion(opt.portion, lang)}</span>
+                                            {isEditing ? (
+                                                <input
+                                                    autoFocus
+                                                    type="number"
+                                                    value={priceDraft}
+                                                    onChange={(e) => setPriceDraft(e.target.value)}
+                                                    onBlur={() => confirmEditPrice(item.name, opt.portion)}
+                                                    onKeyDown={(e) => e.key === 'Enter' && confirmEditPrice(item.name, opt.portion)}
+                                                    className="w-16 border rounded px-1 text-right"
+                                                />
+                                            ) : (
+                                                <button
+                                                    onClick={() => startEditPrice(item.name, opt.portion, opt.price)}
+                                                    className="font-bold text-orange-600"
+                                                >
+                                                    ₹{opt.price}
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+
+                    {/* Add new item */}
+                    {!showAddForm ? (
+                        <button
+                            onClick={() => setShowAddForm(true)}
+                            className="w-full py-3 rounded-xl border-2 border-dashed border-orange-300 text-orange-600 font-bold flex items-center justify-center gap-2"
+                        >
+                            <Plus size={18} />
+                            {t('addNewItem', lang)}
+                        </button>
+                    ) : (
+                        <div className="border border-orange-200 rounded-xl p-3 space-y-3 bg-orange-50">
+                            <p className="text-xs text-gray-500">{t('menuItemsCustomNote', lang)}</p>
+
+                            <input
+                                placeholder={t('itemName', lang)}
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                className="w-full border rounded-lg px-3 py-2"
+                            />
+
+                            <input
+                                list="category-options"
+                                placeholder={t('category', lang)}
+                                value={newCategory}
+                                onChange={(e) => setNewCategory(e.target.value)}
+                                className="w-full border rounded-lg px-3 py-2"
+                            />
+                            <datalist id="category-options">
+                                {categories.map(c => <option key={c} value={c} />)}
+                            </datalist>
+
+                            {newPortions.map((row, idx) => (
+                                <div key={idx} className="flex gap-2">
+                                    <input
+                                        placeholder={t('portion', lang)}
+                                        value={row.portion}
+                                        onChange={(e) => updatePortionRow(idx, 'portion', e.target.value)}
+                                        className="flex-1 border rounded-lg px-3 py-2"
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder={t('price', lang)}
+                                        value={row.price}
+                                        onChange={(e) => updatePortionRow(idx, 'price', e.target.value)}
+                                        className="w-24 border rounded-lg px-3 py-2"
+                                    />
+                                    {newPortions.length > 1 && (
+                                        <button onClick={() => removePortionRow(idx)} className="px-2 text-red-500">
+                                            <X size={18} />
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+
+                            <button onClick={addPortionRow} className="text-sm text-orange-600 font-semibold">
+                                + {t('addPortion', lang)}
+                            </button>
+
+                            <div className="flex gap-2 pt-1">
+                                <button
+                                    onClick={() => setShowAddForm(false)}
+                                    className="flex-1 py-2 rounded-lg bg-gray-200 text-gray-700 font-bold"
+                                >
+                                    {t('cancel', lang)}
+                                </button>
+                                <button
+                                    onClick={submitNewItem}
+                                    className="flex-1 py-2 rounded-lg bg-orange-500 text-white font-bold"
+                                >
+                                    {t('save', lang)}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 
 // Main App
@@ -474,6 +860,16 @@ export default function RestaurantBillGenerator() {
     // offline handling
     const [pendingSaves, setPendingSaves] = useState([]);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    // language + branch
+    const [lang, setLang] = useState(getSavedLanguage());
+    const [branch, setBranch] = useState(getSavedBranch());
+    const [showBranchModal, setShowBranchModal] = useState(!getSavedBranch());
+
+    // settings / menu manager
+    const [showSettings, setShowSettings] = useState(false);
+    const [showMenuManager, setShowMenuManager] = useState(false);
+    const [menuSettings, setMenuSettings] = useState(emptyMenuSettings());
 
     const selectedTableRef = useRef(null);
     const viewingTableRef = useRef(null);
@@ -517,8 +913,9 @@ export default function RestaurantBillGenerator() {
     };
 
 
-    // Load bills from Supabase on mount AND restore selected table
+    // Load bills from Supabase once a branch is selected AND restore selected table
     useEffect(() => {
+        if (!branch) return;
         loadBillsFromSupabase();
 
         // Restore selected table from localStorage
@@ -526,7 +923,13 @@ export default function RestaurantBillGenerator() {
         if (savedTable) {
             setSelectedTable(parseInt(savedTable));
         }
-    }, []);
+    }, [branch]);
+
+    // Load per-branch menu settings (price overrides / custom items / hidden items)
+    useEffect(() => {
+        if (!branch) return;
+        fetchMenuSettings(branch).then(setMenuSettings);
+    }, [branch]);
 
     useEffect(() => {
         const handleOnline = () => {
@@ -550,23 +953,26 @@ export default function RestaurantBillGenerator() {
     }, []);
 
     /* Supabase Section */
-    // Real-time subscription to bill changes
+    // Real-time subscription to bill changes (scoped to the selected branch)
     useEffect(() => {
+        if (!branch) return;
+
         const channel = supabase
-            .channel('bills-realtime')
+            .channel(`bills-realtime-${branch}`)
             .on(
                 'postgres_changes',
                 {
                     event: '*',
                     schema: 'public',
                     table: 'bills',
-                    filter: 'status=eq.active'
+                    filter: `branch=eq.${branch}`
                 },
                 (payload) => {
                     console.log('📡 REALTIME PAYLOAD:', payload);
 
                     const row = payload.new || payload.old;
                     if (!row || !row.table_number) return;
+                    if (row.status && row.status !== 'active') return;
 
                     setBills(prev => ({
                         ...prev,
@@ -581,7 +987,7 @@ export default function RestaurantBillGenerator() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, []);
+    }, [branch]);
 
 
 
@@ -618,7 +1024,8 @@ export default function RestaurantBillGenerator() {
             const { data, error } = await supabase
                 .from('bills')
                 .select('*')
-                .eq('status', 'active');
+                .eq('status', 'active')
+                .eq('branch', branch);
 
             if (error) throw error;
 
@@ -658,6 +1065,7 @@ export default function RestaurantBillGenerator() {
                 .select('id')
                 .eq('table_number', tableNumber)
                 .eq('status', 'active')
+                .eq('branch', branch)
                 .limit(1);
 
             if (selectError) {
@@ -698,6 +1106,7 @@ export default function RestaurantBillGenerator() {
                         items,
                         total,
                         status: 'active',
+                        branch,
                         version: Date.now()
                     })
 
@@ -729,8 +1138,9 @@ export default function RestaurantBillGenerator() {
 
     };
 
-    const categories = [...new Set(menuItems.map(item => item.category))];
-    const filteredMenu = selectedCategory ? menuItems.filter(i => i.category === selectedCategory) : menuItems;
+    const mergedMenuItems = useMemo(() => mergeMenu(menuItems, menuSettings), [menuSettings]);
+    const categories = [...new Set(mergedMenuItems.map(item => item.category))];
+    const filteredMenu = selectedCategory ? mergedMenuItems.filter(i => i.category === selectedCategory) : mergedMenuItems;
 
 
     // adds an item to the selected table's bill
@@ -816,6 +1226,7 @@ export default function RestaurantBillGenerator() {
                         table_number: tableToUpdate,
                         items: billItems,
                         total,
+                        branch,
                         completed_at: now.toISOString(),
                         day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' }),
                         hour_of_day: now.getHours(),
@@ -829,7 +1240,8 @@ export default function RestaurantBillGenerator() {
                     .from('bills')
                     .update({ status: 'cleared' })
                     .eq('table_number', tableToUpdate)
-                    .eq('status', 'active');
+                    .eq('status', 'active')
+                    .eq('branch', branch);
 
                 if (updateError) throw updateError;
 
@@ -941,6 +1353,39 @@ export default function RestaurantBillGenerator() {
         setViewingTableFromAllTables(null);
     };
 
+    // Branch selection (first launch, or via Settings > Switch Branch)
+    const handleSelectBranch = (branchId) => {
+        saveBranch(branchId);
+        setBranch(branchId);
+        setShowBranchModal(false);
+        // reset local, per-branch UI state so we don't show stale data from another branch
+        setSelectedTable(null);
+        localStorage.removeItem('selectedTable');
+        setBills({});
+    };
+
+    const handleRequestChangeBranch = () => {
+        if (window.confirm(t('confirmChangeBranch', lang))) {
+            setShowSettings(false);
+            setShowBranchModal(true);
+        }
+    };
+
+    const handleChangeLang = (code) => {
+        saveLanguage(code);
+        setLang(code);
+    };
+
+    const handleSaveMenuSettings = async (next) => {
+        setMenuSettings(next);
+        try {
+            await saveMenuSettings(branch, next);
+        } catch (error) {
+            console.error('Error saving menu settings:', error);
+            alert('Failed to save menu changes. Please try again.');
+        }
+    };
+
     const currentBill = selectedTable ? bills[selectedTable] || [] : [];
     const total = currentBill.reduce((sum, item) => sum + item.price * item.qty, 0);
     const cartItemCount = currentBill.reduce((sum, item) => sum + item.qty, 0);
@@ -955,10 +1400,14 @@ export default function RestaurantBillGenerator() {
         return item ? item.qty : 0;
     };
 
+    if (showBranchModal) {
+        return <BranchSelectModal lang={lang} onSelect={handleSelectBranch} />;
+    }
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-screen">
-                <div className="text-xl">Loading...</div>
+                <div className="text-xl">{t('loading', lang)}</div>
             </div>
         );
     }
@@ -968,12 +1417,12 @@ export default function RestaurantBillGenerator() {
             {/* Show install button if not installed */}
             {!isInstalled && installPrompt && (
                 <div className="fixed top-16 left-4 right-4 bg-orange-500 text-white p-3 rounded-lg shadow-lg z-50 md:hidden">
-                    <p className="text-sm font-semibold mb-2">📱 Install Anand Fast Food App</p>
+                    <p className="text-sm font-semibold mb-2">{t('installApp', lang)}</p>
                     <button
                         onClick={handleInstall}
                         className="w-full bg-white text-orange-500 py-2 rounded font-bold"
                     >
-                        Install Now
+                        {t('installNow', lang)}
                     </button>
                 </div>
             )}
@@ -982,6 +1431,8 @@ export default function RestaurantBillGenerator() {
                 onCartClick={() => setShowCartDrawer(true)}
                 cartItemCount={cartItemCount}
                 currentTab={activeTab}
+                onSettingsClick={() => setShowSettings(true)}
+                lang={lang}
             />
 
             {/* Mobile: Show different content based on active tab */}
@@ -994,7 +1445,7 @@ export default function RestaurantBillGenerator() {
                             className="w-full py-3 bg-orange-500 text-white rounded-xl font-bold text-lg active:bg-orange-600 flex justify-between items-center px-6"
                         >
                             <span>
-                                {selectedTable ? `Table ${selectedTable}` : 'Select Table'}
+                                {selectedTable ? `${t('tableLabel', lang)} ${selectedTable}` : t('selectTable', lang)}
                             </span>
 
                             {selectedTable && total > 0 && (
@@ -1007,7 +1458,7 @@ export default function RestaurantBillGenerator() {
 
                     {/* Mobile: Category Pills */}
                     <div className="md:hidden">
-                        <CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
+                        <CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} lang={lang} />
                     </div>
                 </>
             )}
@@ -1037,7 +1488,7 @@ export default function RestaurantBillGenerator() {
                                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                             }`}
                                     >
-                                        All
+                                        {t('all', lang)}
                                     </button>
 
                                     {categories.map(cat => (
@@ -1049,7 +1500,7 @@ export default function RestaurantBillGenerator() {
                                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                                 }`}
                                         >
-                                            {cat}
+                                            {translateCategory(cat, lang)}
                                         </button>
                                     ))}
                                 </div>
@@ -1070,6 +1521,7 @@ export default function RestaurantBillGenerator() {
                                         item={item}
                                         onAddItem={addItemToBill}
                                         currentQty={getItemQty(item.name, item.options[0].portion)}
+                                        lang={lang}
                                     />
                                 ))}
                             </div>
@@ -1083,6 +1535,7 @@ export default function RestaurantBillGenerator() {
                             onChangeQuantity={changeQuantity}
                             onPrintBill={printBill}
                             onClearBill={clearBill}
+                            lang={lang}
                         />
                     </>
                 ) : (
@@ -1096,7 +1549,7 @@ export default function RestaurantBillGenerator() {
             </main>
 
             {/* Bottom Navigation (Mobile Only) */}
-            <BottomNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+            <BottomNavigation activeTab={activeTab} onTabChange={setActiveTab} lang={lang} />
 
             {/* Mobile Modals */}
             {showTableModal && (
@@ -1105,6 +1558,7 @@ export default function RestaurantBillGenerator() {
                     selectedTable={selectedTable}
                     onSelectTable={setSelectedTable}
                     onClose={() => setShowTableModal(false)}
+                    lang={lang}
                 />
             )}
 
@@ -1117,6 +1571,29 @@ export default function RestaurantBillGenerator() {
                     onPrintBill={printBill}
                     onClearBill={clearBill}
                     onClose={handleCloseDrawer}
+                    lang={lang}
+                />
+            )}
+
+            {showSettings && (
+                <SettingsModal
+                    lang={lang}
+                    onChangeLang={handleChangeLang}
+                    branch={branch}
+                    onOpenMenuManager={() => { setShowSettings(false); setShowMenuManager(true); }}
+                    onChangeBranch={handleRequestChangeBranch}
+                    onClose={() => setShowSettings(false)}
+                />
+            )}
+
+            {showMenuManager && (
+                <MenuManagerModal
+                    lang={lang}
+                    mergedMenu={mergedMenuItems}
+                    categories={categories}
+                    menuSettings={menuSettings}
+                    onSaveSettings={handleSaveMenuSettings}
+                    onClose={() => setShowMenuManager(false)}
                 />
             )}
         </div>
