@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Download, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '../config/supabase';
+import { BRANCH_OPTIONS, getSavedBranch } from '../lib/branchMenu';
 
 // Import tab components
 import OverviewTab from '../components/dashboard/OverviewTab';
@@ -22,6 +23,45 @@ const TABS = [
   { id: 'reports', label: 'Reports', icon: '📄' }
 ];
 
+// Quick side-by-side branch comparison, shown only when "All Branches" is selected.
+// Every other tab already works off the combined `bills` list, so this is the one
+// place branch-level totals get broken back out.
+function BranchComparisonBar({ bills }) {
+  const byBranch = {};
+  bills.forEach(bill => {
+    const key = bill.branch || 'unknown';
+    if (!byBranch[key]) byBranch[key] = { revenue: 0, orders: 0 };
+    byBranch[key].revenue += parseFloat(bill.total) || 0;
+    byBranch[key].orders += 1;
+  });
+
+  const rows = BRANCH_OPTIONS
+    .map(b => ({ id: b.id, label: b.label.en, ...(byBranch[b.id] || { revenue: 0, orders: 0 }) }))
+    // include any branch id present in the data that isn't in BRANCH_OPTIONS (renamed/removed branch, etc.)
+    .concat(
+      Object.keys(byBranch)
+        .filter(key => !BRANCH_OPTIONS.some(b => b.id === key))
+        .map(key => ({ id: key, label: key, ...byBranch[key] }))
+    );
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-4">
+      <h3 className="text-sm font-semibold text-gray-500 mb-3">Branch Comparison</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {rows.map(row => (
+          <div key={row.id} className="border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+            <div>
+              <p className="font-bold text-gray-800">{row.label}</p>
+              <p className="text-xs text-gray-500">{row.orders} orders</p>
+            </div>
+            <p className="text-xl font-bold text-orange-600">₹{row.revenue.toFixed(0)}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
@@ -31,18 +71,21 @@ export default function Dashboard() {
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  // Default to whichever branch this device is set to (from the main app),
+  // falling back to the first configured branch. 'all' combines both branches.
+  const [selectedBranch, setSelectedBranch] = useState(getSavedBranch() || BRANCH_OPTIONS[0]?.id || 'all');
 
   useEffect(() => {
     fetchData();
-    
+
     // Auto-refresh every 30 seconds
     const interval = setInterval(() => {
       fetchData();
       setLastRefresh(new Date());
     }, 300000);
-    
+
     return () => clearInterval(interval);
-  }, [dateRange, customStartDate, customEndDate]);
+  }, [dateRange, customStartDate, customEndDate, selectedBranch]);
 
   const fetchData = async () => {
     try {
@@ -50,12 +93,18 @@ export default function Dashboard() {
       const dateFilter = getDateFilter();
       if (!dateFilter) return;
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('completed_bills')
         .select('*')
         .gte('completed_at', dateFilter.startDate)
         .lte('completed_at', dateFilter.endDate)
         .order('completed_at', { ascending: false });
+
+      if (selectedBranch !== 'all') {
+        query = query.eq('branch', selectedBranch);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setBills(data || []);
@@ -156,6 +205,18 @@ export default function Dashboard() {
 
             {/* Right: Controls */}
             <div className="flex flex-wrap items-center gap-3">
+              {/* Branch Selector */}
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 font-medium"
+              >
+                {BRANCH_OPTIONS.map(b => (
+                  <option key={b.id} value={b.id}>{b.label.en}</option>
+                ))}
+                <option value="all">All Branches (Combined)</option>
+              </select>
+
               {/* Date Range Selector */}
               <select
                 value={dateRange}
@@ -217,6 +278,13 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Branch comparison, only shown when combining both branches */}
+      {selectedBranch === 'all' && !loading && (
+        <div className="max-w-7xl mx-auto px-4 mt-6">
+          <BranchComparisonBar bills={bills} />
+        </div>
+      )}
 
       {/* Tab Content */}
       <div className="max-w-7xl mx-auto px-4 mt-6">
