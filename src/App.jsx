@@ -189,7 +189,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                                 <p className="text-sm text-gray-500">
                                     {translatePortion(item.portion, lang)}
                                     <span className="mx-1">·</span>
-                                    <span className="text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
+                                    <span className="text-orange-600 font-medium">₹{item.price}</span>
                                 </p>
                             </div>
 
