@@ -21,10 +21,17 @@ import {
 /* ---------------- Header ---------------- */
 
 // top bar with title + cart (mobile) / settings (all tables)
-const Header = ({ onCartClick, cartItemCount, currentTab, onSettingsClick, lang }) => (
+const Header = ({ onCartClick, cartItemCount, currentTab, onSettingsClick, lang, branch }) => (
     <header className="sticky top-0 z-50 bg-orange-500 text-white py-3 px-4 shadow-lg">
         <div className="flex justify-between items-center">
-            <h1 className="text-lg md:text-2xl font-bold">{t('appName', lang)}</h1>
+            <div className="flex flex-col leading-tight">
+                <h1 className="text-lg md:text-2xl font-bold">{t('appName', lang)}</h1>
+                {branch && (
+                    <span className="text-[11px] md:text-xs italic font-normal text-orange-100 tracking-wide">
+                        {branchLabel(branch, lang)}
+                    </span>
+                )}
+            </div>
 
             <div className="flex items-center gap-2">
                 {currentTab === 'home' && (
@@ -189,7 +196,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                                 <p className="text-sm text-gray-500">
                                     {translatePortion(item.portion, lang)}
                                     <span className="mx-1">·</span>
-                                    <span className="text-orange-600 font-medium">₹{item.price}</span>
+                                    <span className="text-orange-600 font-medium">₹{item.price} </span>
                                 </p>
                             </div>
 
@@ -427,7 +434,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                     <span className="flex-1 text-gray-800">
                         <span className="text-gray-400 mr-1">{idx + 1}.</span>
                         {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
-                        <span className="block text-xs text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
+                        <span className="block text-xs text-orange-600 font-medium">₹{item.price}</span>
                     </span>
 
                     <div className="flex items-center gap-3">
@@ -1481,6 +1488,7 @@ export default function RestaurantBillGenerator() {
                 currentTab={activeTab}
                 onSettingsClick={() => setShowSettings(true)}
                 lang={lang}
+                branch={branch}
             />
 
             {/* Mobile: Show different content based on active tab */}
