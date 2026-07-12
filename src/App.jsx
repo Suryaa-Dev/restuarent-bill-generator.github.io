@@ -698,13 +698,26 @@ const MenuManagerModal = ({ lang, mergedMenu, categories, menuSettings, onSaveSe
                                     <p className="text-xs text-gray-400">{translateCategory(item.category, lang)}</p>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => toggleHidden(item.name)}
-                                        className="p-2 rounded-full bg-gray-100"
-                                        title={hiddenSet.has(item.name) ? t('unhide', lang) : t('hide', lang)}
-                                    >
-                                        {hiddenSet.has(item.name) ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
+                                    {/* Hide/show toggle is temporarily disabled for items that are
+                                        currently visible, to prevent accidental taps from hiding them.
+                                        It still works to UN-hide an item that's already hidden. */}
+                                    {hiddenSet.has(item.name) ? (
+                                        <button
+                                            onClick={() => toggleHidden(item.name)}
+                                            className="p-2 rounded-full bg-gray-100"
+                                            title={t('unhide', lang)}
+                                        >
+                                            <EyeOff size={16} />
+                                        </button>
+                                    ) : (
+                                        <button
+                                            disabled
+                                            className="p-2 rounded-full bg-gray-50 text-gray-300 cursor-not-allowed"
+                                            title="Hide is temporarily disabled"
+                                        >
+                                            <Eye size={16} />
+                                        </button>
+                                    )}
                                     {item.isCustom && (
                                         <button
                                             onClick={() => removeCustomItem(item.name)}
@@ -835,6 +848,30 @@ export default function RestaurantBillGenerator() {
     const tables = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     // bills per table -> { tableNo: items[] }
     const [bills, setBills] = useState({});
+
+    // Always-fresh mirror of `bills`. React state updates from rapid, back-to-back
+    // taps can still be "in flight" (not yet committed) when the next tap fires, so
+    // reading `bills` directly inside addItemToBill/changeQuantity can use a stale
+    // snapshot and silently drop items. Reading/writing this ref instead guarantees
+    // each call always builds on top of the very latest bill, even mid-render.
+    const billsRef = useRef({});
+    useEffect(() => {
+        billsRef.current = bills;
+    }, [bills]);
+
+    // Per-table save queue so Supabase writes for the same table always run one at a
+    // time, in order. Without this, two overlapping saves (fired from quick taps)
+    // can resolve out of order over the network and the earlier (smaller) item list
+    // can overwrite the later one in the database.
+    const saveQueueRef = useRef({});
+    const enqueueSave = (tableNumber, items, addToQueue = true) => {
+        const prevInQueue = saveQueueRef.current[tableNumber] || Promise.resolve();
+        const nextInQueue = prevInQueue
+            .catch(() => { }) // don't let one failed save break the chain for this table
+            .then(() => saveBillToSupabase(tableNumber, items, addToQueue));
+        saveQueueRef.current[tableNumber] = nextInQueue;
+        return nextInQueue;
+    };
 
     // active table for ordering
     const [selectedTable, setSelectedTable] = useState(null);
@@ -1010,7 +1047,7 @@ export default function RestaurantBillGenerator() {
         console.log('🔄 Retrying', pendingSaves.length, 'pending saves...');
 
         for (const save of pendingSaves) {
-            await saveBillToSupabase(save.tableNumber, save.items, false);
+            await enqueueSave(save.tableNumber, save.items, false);
         }
 
         setPendingSaves([]);
@@ -1138,7 +1175,10 @@ export default function RestaurantBillGenerator() {
 
     };
 
+    // Customer-facing menu: hidden items dropped entirely
     const mergedMenuItems = useMemo(() => mergeMenu(menuItems, menuSettings), [menuSettings]);
+    // Manager-facing menu: hidden items kept (tagged isHidden) so they can still be un-hidden
+    const managerMenuItems = useMemo(() => mergeMenu(menuItems, menuSettings, { includeHidden: true }), [menuSettings]);
     const categories = [...new Set(mergedMenuItems.map(item => item.category))];
     const filteredMenu = selectedCategory ? mergedMenuItems.filter(i => i.category === selectedCategory) : mergedMenuItems;
 
@@ -1152,8 +1192,10 @@ export default function RestaurantBillGenerator() {
             return;
         }
 
-        const newBills = { ...bills };
-        const bill = [...newBills[selectedTable]];
+        // read from the ref, not the `bills` state variable, so a burst of quick
+        // taps always builds on the latest bill instead of a stale render snapshot
+        const newBills = { ...billsRef.current };
+        const bill = [...(newBills[selectedTable] || [])];
 
         // check if same item + portion already exists
         const existing = bill.find(
@@ -1168,11 +1210,15 @@ export default function RestaurantBillGenerator() {
 
         newBills[selectedTable] = bill;
 
+        // update the ref immediately (synchronously) so the very next tap, even
+        // before this render commits, sees this addition
+        billsRef.current = newBills;
+
         // update UI immediately 
         setBills(newBills);
 
-        // sync with backend (queued if offline)
-        await saveBillToSupabase(selectedTable, bill);
+        // sync with backend (queued if offline; serialized per-table)
+        await enqueueSave(selectedTable, bill);
     };
 
 
@@ -1181,8 +1227,8 @@ export default function RestaurantBillGenerator() {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
 
-        const newBills = { ...bills };
-        const bill = [...newBills[tableToUpdate]];
+        const newBills = { ...billsRef.current };
+        const bill = [...(newBills[tableToUpdate] || [])];
         const qty = parseInt(value);
 
         // remove item if qty is invalid or zero
@@ -1193,10 +1239,11 @@ export default function RestaurantBillGenerator() {
         }
 
         newBills[tableToUpdate] = bill;
+        billsRef.current = newBills;
         setBills(newBills);
 
-        // persist changes
-        await saveBillToSupabase(tableToUpdate, bill);
+        // persist changes (serialized per-table)
+        await enqueueSave(tableToUpdate, bill);
     };
 
 
@@ -1205,7 +1252,7 @@ export default function RestaurantBillGenerator() {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
 
-        const billItems = bills[tableToUpdate];
+        const billItems = billsRef.current[tableToUpdate];
         if (!billItems || billItems.length === 0) {
             alert('No items to clear');
             return;
@@ -1246,6 +1293,7 @@ export default function RestaurantBillGenerator() {
                 if (updateError) throw updateError;
 
                 // reset local state
+                billsRef.current = { ...billsRef.current, [tableToUpdate]: [] };
                 setBills(prev => ({ ...prev, [tableToUpdate]: [] }));
                 setShowCartDrawer(false);
                 setViewingTableFromAllTables(null);
@@ -1589,7 +1637,7 @@ export default function RestaurantBillGenerator() {
             {showMenuManager && (
                 <MenuManagerModal
                     lang={lang}
-                    mergedMenu={mergedMenuItems}
+                    mergedMenu={managerMenuItems}
                     categories={categories}
                     menuSettings={menuSettings}
                     onSaveSettings={handleSaveMenuSettings}
