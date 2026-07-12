@@ -161,8 +161,8 @@ const menuItems = [
     category: "Rice",
     img: tRiceImg,
     options: [
-      { portion: "Half", price: 120 },
-      { portion: "Full", price: 240 }
+      { portion: "Half", price: 110 },
+      { portion: "Full", price: 220 }
     ]
   },
   {
