@@ -101,20 +101,55 @@ export async function saveMenuSettings(branch, settings) {
     if (error) throw error;
 }
 
+// ---- Item order frequency (for the "Fav" tab) ----
+// Aggregates quantities from recently completed bills so the menu can surface
+// the items actually ordered most often at this branch.
+export async function fetchItemFrequency(branch, days = 30) {
+    if (!branch) return {};
+    try {
+        const since = new Date();
+        since.setDate(since.getDate() - days);
+
+        const { data, error } = await supabase
+            .from('completed_bills')
+            .select('items')
+            .eq('branch', branch)
+            .gte('completed_at', since.toISOString());
+
+        if (error) throw error;
+
+        const counts = {};
+        (data || []).forEach(row => {
+            (row.items || []).forEach(item => {
+                counts[item.name] = (counts[item.name] || 0) + (item.qty || 1);
+            });
+        });
+        return counts;
+    } catch (err) {
+        console.error('Error fetching item frequency:', err);
+        return {};
+    }
+}
+
 export function priceKey(name, portion) {
     return `${name}||${portion}`;
 }
 
 // Merges base (static) menu items with per-branch price overrides / hidden items / custom items.
-export function mergeMenu(baseItems, settings) {
+// By default hidden items are dropped entirely (used for the customer-facing menu).
+// Pass { includeHidden: true } to keep them in the result (tagged with isHidden) so a
+// management screen can still list and un-hide them.
+export function mergeMenu(baseItems, settings, opts = {}) {
+    const { includeHidden = false } = opts;
     const s = settings || emptyMenuSettings();
     const hidden = new Set(s.hidden_items || []);
     const overrides = s.price_overrides || {};
 
     const merged = baseItems
-        .filter(item => !hidden.has(item.name))
+        .filter(item => includeHidden || !hidden.has(item.name))
         .map(item => ({
             ...item,
+            isHidden: hidden.has(item.name),
             options: item.options.map(opt => {
                 const key = priceKey(item.name, opt.portion);
                 return overrides[key] !== undefined ? { ...opt, price: overrides[key] } : opt;
@@ -122,10 +157,11 @@ export function mergeMenu(baseItems, settings) {
         }));
 
     const customItems = (s.custom_items || [])
-        .filter(item => !hidden.has(item.name))
+        .filter(item => includeHidden || !hidden.has(item.name))
         .map(item => ({
             ...item,
             isCustom: true,
+            isHidden: hidden.has(item.name),
             options: item.options.map(opt => {
                 const key = priceKey(item.name, opt.portion);
                 return overrides[key] !== undefined ? { ...opt, price: overrides[key] } : opt;

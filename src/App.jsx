@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, EyeOff, Eye, UtensilsCrossed } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, EyeOff, Eye, UtensilsCrossed, Languages, History } from 'lucide-react';
 import { supabase } from './config/supabase';
 import menuItems from './data/items';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
@@ -15,23 +16,17 @@ import {
     mergeMenu,
     priceKey,
     emptyMenuSettings,
+    fetchItemFrequency,
 } from './lib/branchMenu';
 
 
 /* ---------------- Header ---------------- */
 
 // top bar with title + cart (mobile) / settings (all tables)
-const Header = ({ onCartClick, cartItemCount, currentTab, onSettingsClick, lang, branch }) => (
+const Header = ({ onCartClick, cartItemCount, currentTab, onSettingsClick, lang }) => (
     <header className="sticky top-0 z-50 bg-orange-500 text-white py-3 px-4 shadow-lg">
         <div className="flex justify-between items-center">
-            <div className="flex flex-col leading-tight">
-                <h1 className="text-lg md:text-2xl font-bold">{t('appName', lang)}</h1>
-                {branch && (
-                    <span className="text-[11px] md:text-xs italic font-normal text-orange-100 tracking-wide">
-                        {branchLabel(branch, lang)}
-                    </span>
-                )}
-            </div>
+            <h1 className="text-lg md:text-2xl font-bold">{t('appName', lang)}</h1>
 
             <div className="flex items-center gap-2">
                 {currentTab === 'home' && (
@@ -96,7 +91,7 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory, lang })
             className={`px-4 py-2 rounded-full ${selectedCategory === null ? 'bg-orange-500 text-white' : 'bg-gray-100'
                 }`}
         >
-            {t('all', lang)}
+            {t('fav', lang)}
         </button>
 
         {categories.map(cat => (
@@ -115,10 +110,33 @@ const CategoryPills = ({ categories, selectedCategory, onSelectCategory, lang })
 /* ---------------- Menu Item Card ---------------- */
 
 // tap card = default portion, buttons = other portions
-const MenuItem = ({ item, onAddItem, currentQty, lang }) => {
+const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
+    const displayName = translateItemName(item.name, lang);
+
+    // Quick rate-picker layout: no photo, no shared wrapper card — each price is
+    // its own standalone tappable button (used for Ice-cream where the
+    // "portion" is really just a price tier, not a meaningful size label).
+    // Expects a single-option item (see flattenRatePickerItems in the main App).
+    if (item.ratePicker) {
+        const opt = item.options[0];
+        const qty = getQty ? getQty(item.name, opt.portion) : 0;
+        return (
+            <button
+                onClick={() => onAddItem(item.name, opt.portion, opt.price)}
+                className="relative bg-orange-50 rounded-lg border border-orange-200 flex items-center justify-center py-2.5 active:bg-orange-100"
+            >
+                <span className="text-orange-700 font-bold text-base">₹{opt.price}</span>
+                {qty > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-orange-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                        {qty}
+                    </span>
+                )}
+            </button>
+        );
+    }
+
     const defaultOption = item.options[0]; // most ordered portion
     const hasMultipleOptions = item.options.length > 1;
-    const displayName = translateItemName(item.name, lang);
 
     return (
         <div className="bg-white rounded-xl border border-gray-300 overflow-hidden flex flex-col h-60">
@@ -151,15 +169,23 @@ const MenuItem = ({ item, onAddItem, currentQty, lang }) => {
 
             {hasMultipleOptions && (
                 <div className="px-3 pb-3 flex gap-2">
-                    {item.options.slice(1).map((opt, i) => (
-                        <button
-                            key={i}
-                            onClick={() => onAddItem(item.name, opt.portion, opt.price)}
-                            className="flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-200 active:bg-orange-100"
-                        >
-                            {translatePortion(opt.portion, lang)} ₹{opt.price}
-                        </button>
-                    ))}
+                    {item.options.slice(1).map((opt, i) => {
+                        const optQty = getQty ? getQty(item.name, opt.portion) : 0;
+                        return (
+                            <button
+                                key={i}
+                                onClick={() => onAddItem(item.name, opt.portion, opt.price)}
+                                className="relative flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-200 active:bg-orange-100"
+                            >
+                                {translatePortion(opt.portion, lang)} ₹{opt.price}
+                                {optQty > 0 && (
+                                    <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                                        {optQty}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -169,100 +195,120 @@ const MenuItem = ({ item, onAddItem, currentQty, lang }) => {
 /* ---------------- Cart Drawer (Mobile) ---------------- */
 
 // bottom drawer for current table bill
-const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, lang }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
-        <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
-                <h2 className="text-xl font-bold">
-                    {selectedTable ? `${t('tableLabel', lang)} ${selectedTable}` : t('cart', lang)}
-                </h2>
-                <button onClick={onClose}><X size={24} /></button>
-            </div>
+const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, lang }) => {
+    // Local UI state: resets to defaults every time the drawer is opened (it's
+    // only mounted while showCartDrawer is true), which is exactly what we want
+    // for the language toggle — it always starts back at whatever's set in
+    // Settings, and a tap only changes it "for this viewing".
+    const [cartLang, setCartLang] = useState(lang);
 
-            <div className="flex-1 overflow-y-auto p-4">
-                {currentBill.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                        <ShoppingCart size={48} className="mx-auto mb-2 opacity-50" />
-                        <p>{t('noItemsAdded', lang)}</p>
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+            <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
+                <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+                    <h2 className="text-xl font-bold">
+                        {selectedTable ? `${t('tableLabel', cartLang)} ${selectedTable}` : t('cart', cartLang)}
+                    </h2>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setCartLang(l => l === 'en' ? 'mr' : 'en')}
+                            aria-label={cartLang === 'en' ? 'मराठी' : 'English'}
+                            title={cartLang === 'en' ? 'मराठी' : 'English'}
+                            className="p-2 rounded-full bg-gray-100 text-gray-600"
+                        >
+                            <Languages size={20} />
+                        </button>
+
+                        <button onClick={onClose}><X size={24} /></button>
                     </div>
-                ) : (
-                    currentBill.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center py-3 border-b">
-                            <div>
-                                <p className="font-medium">
-                                    <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
-                                    {translateItemName(item.name, lang)}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                    {translatePortion(item.portion, lang)}
-                                    <span className="mx-1">·</span>
-                                    <span className="text-orange-600 font-medium">₹{item.price} </span>
-                                </p>
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={() => onChangeQuantity(idx, item.qty - 1)}
-                                    className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
-                                >
-                                    <Minus size={16} />
-                                </button>
-
-                                <span className="font-bold w-8 text-center text-gray-800">
-                                    {item.qty}
-                                </span>
-
-                                <button
-                                    onClick={() => onChangeQuantity(idx, item.qty + 1)}
-                                    className="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"
-                                >
-                                    <Plus size={16} />
-                                </button>
-
-                                <span className="font-bold w-16 text-right text-gray-800">
-                                    ₹{item.price * item.qty}
-                                </span>
-                            </div>
-
-                        </div>
-                    ))
-                )}
-            </div>
-
-            <div className="border-t p-4 space-y-3">
-                <div className="flex justify-between font-bold text-xl">
-                    <span>{t('total', lang)}</span>
-                    <span className="text-orange-600">₹{total}</span>
                 </div>
 
-                <div className="flex gap-3">
-                    <button
-                        onClick={onClearBill}
-                        className="flex-1 py-3 rounded-xl font-bold 
+                <div className="flex-1 overflow-y-auto p-4">
+                    {currentBill.length === 0 ? (
+                        <div className="text-center py-12 text-gray-400">
+                            <ShoppingCart size={48} className="mx-auto mb-2 opacity-50" />
+                            <p>{t('noItemsAdded', cartLang)}</p>
+                        </div>
+                    ) : (
+                        currentBill.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center py-3 border-b">
+                                <div>
+                                    <p className="font-medium">
+                                        <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
+                                        {translateItemName(item.name, cartLang)}
+                                    </p>
+                                    <p className="text-sm text-gray-500">
+                                        {translatePortion(item.portion, cartLang)}
+                                        <span className="mx-1">·</span>
+                                        <span className="text-orange-600 font-medium">₹{item.price} {t('each', cartLang)}</span>
+                                    </p>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                                        className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
+                                    >
+                                        <Minus size={16} />
+                                    </button>
+
+                                    <span className="font-bold w-8 text-center text-gray-800">
+                                        {item.qty}
+                                    </span>
+
+                                    <button
+                                        onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                                        className="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"
+                                    >
+                                        <Plus size={16} />
+                                    </button>
+
+                                    <span className="font-bold w-16 text-right text-gray-800">
+                                        ₹{item.price * item.qty}
+                                    </span>
+                                </div>
+
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="border-t p-4 space-y-3">
+                    <div className="flex justify-between font-bold text-xl">
+                        <span>{t('total', cartLang)}</span>
+                        <span className="text-orange-600">₹{total}</span>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <button
+                            onClick={onClearBill}
+                            className="flex-1 py-3 rounded-xl font-bold 
                bg-red-500 text-white 
                active:bg-red-600
                shadow-md flex items-center justify-center gap-2"
-                    >
-                        <Trash2 size={20} />
-                        {t('clearBill', lang)}
-                    </button>
+                        >
+                            <Trash2 size={20} />
+                            {t('clearBill', cartLang)}
+                        </button>
 
-                    <button
-                        onClick={onPrintBill}
-                        className="flex-1 py-3 rounded-xl font-bold 
+                        <button
+                            onClick={onPrintBill}
+                            className="flex-1 py-3 rounded-xl font-bold 
                bg-gray-800 text-white 
                active:bg-black
                shadow-md flex items-center justify-center gap-2"
-                    >
-                        <Printer size={20} />
-                        {t('printBill', lang)}
-                    </button>
-                </div>
+                        >
+                            <Printer size={20} />
+                            {t('printBill', cartLang)}
+                        </button>
+                    </div>
 
+                </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 
 // overview of all tables with running totals
@@ -419,76 +465,96 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
 
 
 // fixed bill section on desktop
-const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, lang }) => (
-    <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
+const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, lang }) => {
+    const [billLang, setBillLang] = useState(lang);
 
-        {/* current table info */}
-        <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
-            {selectedTable ? `${t('billFor', lang)} ${selectedTable}` : t('billSelectTable', lang)}
-        </h3>
+    // keep in step if the global language changes while this panel is mounted
+    // (it's always on-screen on desktop, unlike the mobile cart drawer)
+    useEffect(() => { setBillLang(lang); }, [lang]);
 
-        {/* scrollable bill items */}
-        <div className="bill-scroll-area mb-3 overflow-y-auto">
-            {currentBill.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
-                    <span className="flex-1 text-gray-800">
-                        <span className="text-gray-400 mr-1">{idx + 1}.</span>
-                        {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
-                        <span className="block text-xs text-orange-600 font-medium">₹{item.price}</span>
-                    </span>
+    return (
+        <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => onChangeQuantity(idx, item.qty - 1)}
-                            className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"
-                        >
-                            <Minus size={14} />
-                        </button>
+            {/* current table info */}
+            <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
+                {selectedTable ? `${t('billFor', billLang)} ${selectedTable}` : t('billSelectTable', billLang)}
+            </h3>
 
-                        <span className="w-6 text-center font-bold">
-                            {item.qty}
+            {/* scrollable bill items */}
+            <div className="bill-scroll-area mb-3 overflow-y-auto">
+                {currentBill.map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
+                        <span className="flex-1 text-gray-800">
+                            <span className="text-gray-400 mr-1">{idx + 1}.</span>
+                            {translateItemName(item.name, billLang)} ({translatePortion(item.portion, billLang)})
+                            <span className="block text-xs text-orange-600 font-medium">
+                                ₹{item.price} {t('each', billLang)}
+                            </span>
                         </span>
 
-                        <button
-                            onClick={() => onChangeQuantity(idx, item.qty + 1)}
-                            className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center hover:bg-orange-600"
-                        >
-                            <Plus size={14} />
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                                className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"
+                            >
+                                <Minus size={14} />
+                            </button>
 
-                        <span className="min-w-15 text-right font-bold text-gray-800">
-                            ₹{item.price * item.qty}
-                        </span>
+                            <span className="w-6 text-center font-bold">
+                                {item.qty}
+                            </span>
+
+                            <button
+                                onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                                className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center hover:bg-orange-600"
+                            >
+                                <Plus size={14} />
+                            </button>
+
+                            <span className="min-w-15 text-right font-bold text-gray-800">
+                                ₹{item.price * item.qty}
+                            </span>
+                        </div>
+
                     </div>
+                ))}
+            </div>
 
+            {/* total + actions pinned at bottom */}
+            <div className="bill-buttons bg-white pt-2 pb-2 shadow-[0_-2px_8px_rgba(0,0,0,0.1)] sticky bottom-0 z-10">
+                <div className="flex justify-end mb-2">
+                    <button
+                        onClick={() => setBillLang(l => l === 'en' ? 'mr' : 'en')}
+                        className="p-2 rounded-full bg-gray-100 text-gray-600"
+                        title={billLang === 'en' ? 'मराठी' : 'English'}
+                    >
+                        <Languages size={18} />
+                    </button>
                 </div>
-            ))}
-        </div>
 
-        {/* total + actions pinned at bottom */}
-        <div className="bill-buttons bg-white pt-2 pb-2 shadow-[0_-2px_8px_rgba(0,0,0,0.1)] sticky bottom-0 z-10">
-            <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3">
-                {t('total', lang)}: ₹{total}
-            </div>
+                <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3">
+                    {t('total', billLang)}: ₹{total}
+                </div>
 
-            <div className="flex gap-4">
-                <button
-                    onClick={onPrintBill}
-                    className="flex-1 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all"
-                >
-                    {t('printBill', lang)}
-                </button>
+                <div className="flex gap-4">
+                    <button
+                        onClick={onPrintBill}
+                        className="flex-1 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all"
+                    >
+                        {t('printBill', billLang)}
+                    </button>
 
-                <button
-                    onClick={onClearBill}
-                    className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all"
-                >
-                    {t('clearBill', lang)}
-                </button>
+                    <button
+                        onClick={onClearBill}
+                        className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all"
+                    >
+                        {t('clearBill', billLang)}
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 
 /* ---------------- Branch Select Modal ---------------- */
@@ -517,7 +583,7 @@ const BranchSelectModal = ({ lang, onSelect }) => (
 
 /* ---------------- Settings Modal ---------------- */
 
-const SettingsModal = ({ lang, onChangeLang, branch, onOpenMenuManager, onChangeBranch, onClose }) => (
+const SettingsModal = ({ lang, onChangeLang, branch, onOpenMenuManager, onOpenHistory, onChangeBranch, onClose }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center">
         <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
@@ -556,6 +622,18 @@ const SettingsModal = ({ lang, onChangeLang, branch, onOpenMenuManager, onChange
                     <span className="flex items-center gap-2 font-semibold text-gray-800">
                         <UtensilsCrossed size={18} />
                         {t('updateMenu', lang)}
+                    </span>
+                    <span className="text-gray-400">›</span>
+                </button>
+
+                {/* Order History */}
+                <button
+                    onClick={onOpenHistory}
+                    className="w-full flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-200 active:bg-gray-100"
+                >
+                    <span className="flex items-center gap-2 font-semibold text-gray-800">
+                        <History size={18} />
+                        {t('orderHistory', lang)}
                     </span>
                     <span className="text-gray-400">›</span>
                 </button>
@@ -852,6 +930,7 @@ const MenuManagerModal = ({ lang, mergedMenu, categories, menuSettings, onSaveSe
 
 // Main App
 export default function RestaurantBillGenerator() {
+    const navigate = useNavigate();
     const tables = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     // bills per table -> { tableNo: items[] }
     const [bills, setBills] = useState({});
@@ -915,6 +994,13 @@ export default function RestaurantBillGenerator() {
     const [showMenuManager, setShowMenuManager] = useState(false);
     const [menuSettings, setMenuSettings] = useState(emptyMenuSettings());
 
+    // "Fav" tab: how often each item has actually been ordered at this branch
+    const [itemFrequency, setItemFrequency] = useState({});
+    const refreshItemFrequency = () => {
+        if (!branch) return;
+        fetchItemFrequency(branch).then(setItemFrequency);
+    };
+
     const selectedTableRef = useRef(null);
     const viewingTableRef = useRef(null);
 
@@ -973,6 +1059,11 @@ export default function RestaurantBillGenerator() {
     useEffect(() => {
         if (!branch) return;
         fetchMenuSettings(branch).then(setMenuSettings);
+    }, [branch]);
+
+    // Load "Fav" tab data (most frequently ordered items) for this branch
+    useEffect(() => {
+        refreshItemFrequency();
     }, [branch]);
 
     useEffect(() => {
@@ -1187,7 +1278,52 @@ export default function RestaurantBillGenerator() {
     // Manager-facing menu: hidden items kept (tagged isHidden) so they can still be un-hidden
     const managerMenuItems = useMemo(() => mergeMenu(menuItems, menuSettings, { includeHidden: true }), [menuSettings]);
     const categories = [...new Set(mergedMenuItems.map(item => item.category))];
-    const filteredMenu = selectedCategory ? mergedMenuItems.filter(i => i.category === selectedCategory) : mergedMenuItems;
+
+    // "Fav" (replaces the old "All"): the items ordered most often at this branch,
+    // most-ordered first. Falls back to the first few menu items until there's
+    // enough order history to rank anything.
+    const favoriteItems = useMemo(() => {
+        const byName = {};
+        mergedMenuItems.forEach(it => { byName[it.name] = it; });
+
+        const rankedNames = Object.entries(itemFrequency)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name]) => name)
+            .filter(name => byName[name]);
+
+        if (rankedNames.length === 0) {
+            return mergedMenuItems.slice(0, 8);
+        }
+        return rankedNames.slice(0, 12).map(name => byName[name]);
+    }, [itemFrequency, mergedMenuItems]);
+
+    // Rate-picker items (Cold Drinks / Ice-cream) store all their price points on
+    // one item; for the customer-facing grid we split that into one standalone
+    // button per price so they don't share a wrapper card. Everywhere else
+    // (Update Menu, price overrides, hidden-item toggle) keeps working on the
+    // combined item — this only affects how it's displayed here.
+    const flattenRatePickerItems = (items) => {
+        const out = [];
+        items.forEach(item => {
+            if (item.ratePicker) {
+                item.options.forEach(opt => out.push({ ...item, options: [opt] }));
+            } else {
+                out.push(item);
+            }
+        });
+        return out;
+    };
+
+    const filteredMenu = useMemo(() => {
+        const base = selectedCategory
+            ? mergedMenuItems.filter(i => i.category === selectedCategory)
+            : favoriteItems;
+        return flattenRatePickerItems(base);
+    }, [selectedCategory, mergedMenuItems, favoriteItems]);
+
+    // Ice-cream (and anything else flagged ratePicker) uses a tighter 3-per-row
+    // grid instead of the usual photo-card layout.
+    const isRatePickerOnly = filteredMenu.length > 0 && filteredMenu.every(i => i.ratePicker);
 
 
     // adds an item to the selected table's bill
@@ -1205,12 +1341,13 @@ export default function RestaurantBillGenerator() {
         const bill = [...(newBills[selectedTable] || [])];
 
         // check if same item + portion already exists
-        const existing = bill.find(
+        const existingIndex = bill.findIndex(
             b => b.name === name && b.portion === portion
         );
 
-        if (existing) {
-            existing.qty++;
+        if (existingIndex >= 0) {
+            const existing = bill[existingIndex];
+            bill[existingIndex] = { ...existing, qty: existing.qty + 1 };
         } else {
             bill.push({ name, portion, price, qty: 1 });
         }
@@ -1242,7 +1379,7 @@ export default function RestaurantBillGenerator() {
         if (isNaN(qty) || qty <= 0) {
             bill.splice(index, 1);
         } else {
-            bill[index].qty = qty;
+            bill[index] = { ...bill[index], qty };
         }
 
         newBills[tableToUpdate] = bill;
@@ -1304,6 +1441,9 @@ export default function RestaurantBillGenerator() {
                 setBills(prev => ({ ...prev, [tableToUpdate]: [] }));
                 setShowCartDrawer(false);
                 setViewingTableFromAllTables(null);
+
+                // this order just fed into "Fav" — refresh so it reflects the latest counts
+                refreshItemFrequency();
 
             } catch (error) {
                 console.error('Error clearing bill:', error);
@@ -1488,7 +1628,6 @@ export default function RestaurantBillGenerator() {
                 currentTab={activeTab}
                 onSettingsClick={() => setShowSettings(true)}
                 lang={lang}
-                branch={branch}
             />
 
             {/* Mobile: Show different content based on active tab */}
@@ -1544,7 +1683,7 @@ export default function RestaurantBillGenerator() {
                                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                             }`}
                                     >
-                                        {t('all', lang)}
+                                        {t('fav', lang)}
                                     </button>
 
                                     {categories.map(cat => (
@@ -1563,12 +1702,12 @@ export default function RestaurantBillGenerator() {
                             </div>
 
                             {/* Menu Grid */}
-                            <div className="flex-1 
-                                grid grid-cols-2 md:grid-cols-4 
+                            <div className={`flex-1 
+                                grid ${isRatePickerOnly ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-4'} 
                                 gap-3 md:gap-4 
                                 p-3 md:p-4 
                                 overflow-y-auto bg-white
-                                w-full"
+                                w-full`}
                             >
 
                                 {filteredMenu.map((item, idx) => (
@@ -1577,6 +1716,7 @@ export default function RestaurantBillGenerator() {
                                         item={item}
                                         onAddItem={addItemToBill}
                                         currentQty={getItemQty(item.name, item.options[0].portion)}
+                                        getQty={getItemQty}
                                         lang={lang}
                                     />
                                 ))}
@@ -1637,6 +1777,7 @@ export default function RestaurantBillGenerator() {
                     onChangeLang={handleChangeLang}
                     branch={branch}
                     onOpenMenuManager={() => { setShowSettings(false); setShowMenuManager(true); }}
+                    onOpenHistory={() => { setShowSettings(false); navigate('/history'); }}
                     onChangeBranch={handleRequestChangeBranch}
                     onClose={() => setShowSettings(false)}
                 />

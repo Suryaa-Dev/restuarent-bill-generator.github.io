@@ -34,9 +34,6 @@ import coldDrinksImg from '../assets/coldDrink20.webp';
 import coldDrinksImg45 from '../assets/coldDrink45.webp';
 import coldDrinksImg10 from '../assets/maaza.jpg';
 import jainImg from '../assets/jain.jpg'
-import amulImg from '../assets/amul.jpeg';
-import amulImg2 from '../assets/amulKulfi.jpg';
-import amulImg3 from '../assets/amulKulfi2.jpg';
 
 const menuItems = [
   {
@@ -161,8 +158,8 @@ const menuItems = [
     category: "Rice",
     img: tRiceImg,
     options: [
-      { portion: "Half", price: 110 },
-      { portion: "Full", price: 220 }
+      { portion: "Half", price: 120 },
+      { portion: "Full", price: 240 }
     ]
   },
   {
@@ -190,6 +187,15 @@ const menuItems = [
     options: [
       { portion: "Half", price: 80 },
       { portion: "Full", price: 160 }
+    ]
+  },
+  {
+    name: "Paneer Rice",
+    category: "Rice",
+    img: riceImg,
+    options: [
+      { portion: "Half", price: 100 },
+      { portion: "Full", price: 200 }
     ]
   },
   {
@@ -238,6 +244,15 @@ const menuItems = [
     ]
   },
   {
+    name: "Paneer Noodles",
+    category: "Noodles",
+    img: noodlesImg,
+    options: [
+      { portion: "Half", price: 100 },
+      { portion: "Full", price: 200 }
+    ]
+  },
+  {
     name: "Paneer Manchuri",
     category: "Paneer",
     img: pManchImg,
@@ -275,7 +290,7 @@ const menuItems = [
   },
   {
     name: "Paneer Rice",
-    category: "Rice",
+    category: "Paneer",
     img: riceImg,
     options: [
       { portion: "Half", price: 100 },
@@ -284,8 +299,17 @@ const menuItems = [
   },
   {
     name: "Paneer Noodles",
-    category: "Noodles",
+    category: "Paneer",
     img: noodlesImg,
+    options: [
+      { portion: "Half", price: 100 },
+      { portion: "Full", price: 200 }
+    ]
+  },
+  {
+    name: "Paneer Combination",
+    category: "Paneer",
+    img: tRiceImg,
     options: [
       { portion: "Half", price: 100 },
       { portion: "Full", price: 200 }
@@ -373,7 +397,7 @@ const menuItems = [
     name: "Ex Fried Noodles",
     category: "Soup",
     img: friedNoodles,
-    options: [{ portion: "Extra", price: 30 }]
+    options: [{ portion: "Extra", price: 20 }]
   },
   {
     name: "Water Bottle",
@@ -400,36 +424,25 @@ const menuItems = [
     name: "Cold Drinks",
     category: "Cold Drinks",
     img: coldDrinksImg45,
-    options: [{ portion: "45Rs", price: 45 }]
+    options: [{ portion: "40Rs", price: 40 }]
   },
   {
+    // Shown as quick rate-picker buttons (no photo) — "portion" is kept only so
+    // price overrides / hidden-item toggles still work per-price like every
+    // other item.
     name: "Ice-cream",
     category: "Ice-cream",
-    img: amulImg,
+    img: null,
+    ratePicker: true,
     options: [
       { portion: "I", price: 10 },
       { portion: "II", price: 15 },
       { portion: "III", price: 20 },
-      
-    ]
-  },
-  {
-    name: "Ice-cream",
-    category: "Ice-cream",
-    img: amulImg2,
-    options: [
       { portion: "IV", price: 25 },
       { portion: "V", price: 30 },
       { portion: "VI", price: 35 },
-    ]
-  },
-  {
-    name: "Ice-cream",
-    category: "Ice-cream",
-    img: amulImg3,
-    options: [
       { portion: "VII", price: 40 },
-      { portion: "VIII", price: 45 },
+      { portion: "VIII", price: 45 }
     ]
   }
 ];

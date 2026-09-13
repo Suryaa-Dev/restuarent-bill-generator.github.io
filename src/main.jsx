@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import OrderHistory from './pages/OrderHistory.jsx';
 import './index.css';
 
 // Register service worker
@@ -25,6 +26,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/history" element={<OrderHistory />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>
