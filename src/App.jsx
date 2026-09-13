@@ -1281,10 +1281,13 @@ export default function RestaurantBillGenerator() {
 
     // "Fav" (replaces the old "All"): the items ordered most often at this branch,
     // most-ordered first. Falls back to the first few menu items until there's
-    // enough order history to rank anything.
+    // enough order history to rank anything. Rate-picker items (Ice-cream) are
+    // excluded — they display as bare price buttons with no name/photo, which
+    // looks out of place mixed in with regular item cards.
     const favoriteItems = useMemo(() => {
+        const favEligible = mergedMenuItems.filter(it => !it.ratePicker);
         const byName = {};
-        mergedMenuItems.forEach(it => { byName[it.name] = it; });
+        favEligible.forEach(it => { byName[it.name] = it; });
 
         const rankedNames = Object.entries(itemFrequency)
             .sort((a, b) => b[1] - a[1])
@@ -1292,7 +1295,7 @@ export default function RestaurantBillGenerator() {
             .filter(name => byName[name]);
 
         if (rankedNames.length === 0) {
-            return mergedMenuItems.slice(0, 8);
+            return favEligible.slice(0, 8);
         }
         return rankedNames.slice(0, 12).map(name => byName[name]);
     }, [itemFrequency, mergedMenuItems]);
