@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, EyeOff, Eye, UtensilsCrossed, Languages, History } from 'lucide-react';
+import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, EyeOff, Eye, UtensilsCrossed, Languages, History, ArrowRightLeft, ListPlus } from 'lucide-react';
 import { supabase } from './config/supabase';
 import menuItems from './data/items';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
@@ -80,6 +80,57 @@ const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose, lan
         </div>
     </div>
 );
+
+/* ---------------- Shift Table Modal ---------------- */
+
+// Lets staff move an entire order from one table to another. Occupied
+// destination tables are shown but disabled — tapping one explains why
+// instead of silently doing nothing or overwriting the other order.
+const ShiftTableModal = ({ sourceTable, tables, bills, onShift, onClose, lang }) => {
+    const [warnTable, setWarnTable] = useState(null);
+
+    const isOccupied = (num) => (bills[num] || []).length > 0;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-end md:items-center justify-center">
+            <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl max-h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+                    <div>
+                        <h2 className="text-lg font-bold">{t('shiftOrderTitle', lang)}</h2>
+                        <p className="text-xs text-gray-500">
+                            {t('shiftOrderFrom', lang)} {sourceTable} {t('shiftOrderTo', lang)}
+                        </p>
+                    </div>
+                    <button onClick={onClose}><X size={22} /></button>
+                </div>
+
+                {warnTable && (
+                    <div className="mx-4 mt-3 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                        {t('tableWordShort', lang)} {warnTable} {t('shiftOccupiedWarning', lang)}
+                    </div>
+                )}
+
+                <div className="grid grid-cols-4 gap-2 p-4 overflow-y-auto">
+                    {tables.filter(num => num !== sourceTable).map(num => {
+                        const occupied = isOccupied(num);
+                        return (
+                            <button
+                                key={num}
+                                onClick={() => occupied ? setWarnTable(num) : onShift(num)}
+                                className={`aspect-square rounded-xl font-bold flex items-center justify-center border-2 ${occupied
+                                    ? 'bg-red-50 border-red-200 text-red-400'
+                                    : 'bg-green-50 border-green-200 text-green-700 active:bg-green-100'
+                                    }`}
+                            >
+                                {num}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 /* ---------------- Category Filter ---------------- */
 
@@ -195,7 +246,7 @@ const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
 /* ---------------- Cart Drawer (Mobile) ---------------- */
 
 // bottom drawer for current table bill
-const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, lang }) => {
+const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, lang }) => {
     // Local UI state: resets to defaults every time the drawer is opened (it's
     // only mounted while showCartDrawer is true), which is exactly what we want
     // for the language toggle — it always starts back at whatever's set in
@@ -205,23 +256,44 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
             <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
-                <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
-                    <h2 className="text-xl font-bold">
+                {/* Title + close kept on their own row, away from the action buttons
+                    below, so closing the drawer is never at risk of a mis-tap. */}
+                <div className="flex justify-between items-center px-4 pt-4 pb-2 sticky top-0 bg-white z-10">
+                    <h2 className="text-xl font-bold truncate">
                         {selectedTable ? `${t('tableLabel', cartLang)} ${selectedTable}` : t('cart', cartLang)}
                     </h2>
+                    <button onClick={onClose} className="p-1 -mr-1 shrink-0" aria-label={t('close', cartLang)}>
+                        <X size={24} />
+                    </button>
+                </div>
 
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setCartLang(l => l === 'en' ? 'mr' : 'en')}
-                            aria-label={cartLang === 'en' ? 'मराठी' : 'English'}
-                            title={cartLang === 'en' ? 'मराठी' : 'English'}
-                            className="p-2 rounded-full bg-gray-100 text-gray-600"
-                        >
-                            <Languages size={20} />
-                        </button>
+                {/* Action row: add more items / shift table / language — each a
+                    full-height labeled button so all three stay easy to tell apart
+                    and easy to hit, even with four controls total in this header. */}
+                <div className="flex items-stretch gap-2 px-4 pb-3 border-b sticky top-[52px] bg-white z-10">
+                    <button
+                        onClick={onQuickAdd}
+                        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-green-50 text-green-700 active:bg-green-100"
+                    >
+                        <ListPlus size={18} />
+                        <span className="text-[10px] font-semibold leading-tight">{t('addMore', cartLang)}</span>
+                    </button>
 
-                        <button onClick={onClose}><X size={24} /></button>
-                    </div>
+                    <button
+                        onClick={onShiftTable}
+                        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-blue-50 text-blue-700 active:bg-blue-100"
+                    >
+                        <ArrowRightLeft size={18} />
+                        <span className="text-[10px] font-semibold leading-tight">{t('shiftTable', cartLang)}</span>
+                    </button>
+
+                    <button
+                        onClick={() => setCartLang(l => l === 'en' ? 'mr' : 'en')}
+                        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-gray-50 text-gray-700 active:bg-gray-100"
+                    >
+                        <Languages size={18} />
+                        <span className="text-[10px] font-semibold leading-tight">{cartLang === 'en' ? 'मराठी' : 'English'}</span>
+                    </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4">
@@ -968,6 +1040,7 @@ export default function RestaurantBillGenerator() {
     // mobile ui states
     const [showTableModal, setShowTableModal] = useState(false);
     const [showCartDrawer, setShowCartDrawer] = useState(false);
+    const [showShiftModal, setShowShiftModal] = useState(false);
 
     // pwa install handling
     const [installPrompt, setInstallPrompt] = useState(null);
@@ -1107,7 +1180,18 @@ export default function RestaurantBillGenerator() {
 
                     const row = payload.new || payload.old;
                     if (!row || !row.table_number) return;
-                    if (row.status && row.status !== 'active') return;
+
+                    // A bill going to any non-active status (cleared, etc.) means the
+                    // table is now empty — reflect that immediately on every device
+                    // instead of ignoring the event, which was leaving stale items
+                    // showing elsewhere after a bill was cleared.
+                    if (row.status && row.status !== 'active') {
+                        setBills(prev => ({
+                            ...prev,
+                            [row.table_number]: []
+                        }));
+                        return;
+                    }
 
                     setBills(prev => ({
                         ...prev,
@@ -1551,6 +1635,52 @@ export default function RestaurantBillGenerator() {
         setViewingTableFromAllTables(null);
     };
 
+    // "Add More" from the cart drawer: jump straight to Home with this exact
+    // table already selected, so adding another item is one tap instead of
+    // closing the drawer, going to Home, and reselecting the table.
+    const handleQuickAddMore = () => {
+        const table = viewingTableFromAllTables || selectedTable;
+        if (!table) return;
+        setSelectedTable(table);
+        localStorage.setItem('selectedTable', table.toString());
+        setActiveTab('home');
+        setShowCartDrawer(false);
+        setViewingTableFromAllTables(null);
+    };
+
+    // Moves an entire order from the table currently open in the cart to
+    // another table. Destination must be empty — ShiftTableModal already
+    // blocks occupied tables in the UI, but we re-check here too in case
+    // something changed between opening the modal and tapping a table.
+    const handleShiftTable = async (destTable) => {
+        const sourceTable = viewingTableFromAllTables || selectedTable;
+        if (!sourceTable || destTable === sourceTable) return;
+
+        const sourceItems = billsRef.current[sourceTable] || [];
+        const destItems = billsRef.current[destTable] || [];
+
+        if (destItems.length > 0) {
+            alert(`Table ${destTable} already has an active order. Please clear it first.`);
+            return;
+        }
+
+        const newBills = { ...billsRef.current, [destTable]: sourceItems, [sourceTable]: [] };
+        billsRef.current = newBills;
+        setBills(newBills);
+        setShowShiftModal(false);
+
+        // persist both sides — independent per-table saves, safely serialized
+        await enqueueSave(destTable, sourceItems);
+        await enqueueSave(sourceTable, []);
+
+        // follow the order to its new table so the cart view doesn't go stale
+        if (viewingTableFromAllTables === sourceTable) setViewingTableFromAllTables(destTable);
+        if (selectedTable === sourceTable) {
+            setSelectedTable(destTable);
+            localStorage.setItem('selectedTable', destTable.toString());
+        }
+    };
+
     // Branch selection (first launch, or via Settings > Switch Branch)
     const handleSelectBranch = (branchId) => {
         saveBranch(branchId);
@@ -1770,6 +1900,19 @@ export default function RestaurantBillGenerator() {
                     onPrintBill={printBill}
                     onClearBill={clearBill}
                     onClose={handleCloseDrawer}
+                    onQuickAdd={handleQuickAddMore}
+                    onShiftTable={() => setShowShiftModal(true)}
+                    lang={lang}
+                />
+            )}
+
+            {showShiftModal && (
+                <ShiftTableModal
+                    sourceTable={viewingTableFromAllTables || selectedTable}
+                    tables={tables}
+                    bills={bills}
+                    onShift={handleShiftTable}
+                    onClose={() => setShowShiftModal(false)}
                     lang={lang}
                 />
             )}
