@@ -1540,83 +1540,152 @@ export default function RestaurantBillGenerator() {
     };
 
 
-    // prints receipt using browser print
+        // prints receipt (80mm thermal) using browser print
     const printBill = async () => {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
 
-        const now = new Date();
-        let total = 0;
+        const items = bills[tableToUpdate] || [];
+        if (items.length === 0) return;
 
-        // build receipt rows
-        const billRows = bills[tableToUpdate]
-            .map(b => {
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-IN');
+        const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const logoUrl = `${window.location.origin}/anand-logo-bw.png`;
+
+        let total = 0;
+        let totalQty = 0;
+
+        const billRows = items
+            .map((b, idx) => {
                 const lineTotal = b.price * b.qty;
                 total += lineTotal;
+                totalQty += b.qty;
+                const portion = b.portion ? ` (${translatePortion(b.portion, lang)})` : '';
                 return `
-        <tr>
-          <td>${b.name} (${b.portion})</td>
-          <td style="text-align:center;">${b.qty}</td>
-          <td style="text-align:right;">${b.price.toFixed(2)}</td>
-          <td style="text-align:right;">${lineTotal.toFixed(2)}</td>
-        </tr>`;
+        <div class="item">
+          <div class="name">${idx + 1}. ${translateItemName(b.name, lang)}${portion}</div>
+          <div class="line">
+            <span></span>
+            <span class="num">${b.qty}</span>
+            <span class="num">${b.price}</span>
+            <span class="num">${lineTotal}</span>
+          </div>
+        </div>`;
             })
             .join('');
 
         const printContent = `
     <html>
       <head>
+        <meta charset="utf-8" />
         <title>Receipt</title>
         <style>
-          @media print {
-            body {
-              font-family: monospace;
-              font-size: 12px;
-              width: 80mm;
-              margin: 0;
-              padding: 5px;
-            }
-            h2, p { margin: 4px 0; text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { border-bottom: 1px dotted #000; text-align: left; }
-            td { border-bottom: 1px dotted #ccc; }
-            tfoot td { font-weight: bold; border-top: 1px dotted #000; }
+          @page { size: 80mm auto; margin: 0; }
+          * { box-sizing: border-box; }
+          html, body {
+            width: 100%;
+            max-width: 80mm;
+            margin: 0;
+            padding: 0;
+            background: #fff;
           }
-          @page { margin: 0 }
+          body {
+            padding: 2mm 3mm 10mm;
+            color: #000;
+            font-family: 'Noto Sans Devanagari', 'Segoe UI', Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.35;
+          }
+          .logo {
+    display: block;
+    width: 48mm;
+    margin: 0 auto 2mm;
+    image-rendering: crisp-edges;
+}
+          .center { text-align: center; }
+          .bold { font-weight: 700; }
+          .dash { border-top: 1px dashed #000; margin: 2mm 0; }
+          .row { display: flex; justify-content: space-between; align-items: baseline; }
+          .line, .head {
+            display: grid;
+            grid-template-columns: 1fr 9mm 12mm 15mm;
+            gap: 1mm;
+          }
+          .head { font-weight: 700; }
+          .num { text-align: right; }
+          .item { margin-bottom: 1.5mm; }
+          .name { font-weight: 600; word-break: break-word; }
+          .grand { font-size: 16px; font-weight: 800; margin-top: 1mm; }
+          .small { font-size: 11px; }
         </style>
       </head>
       <body>
-        <h2>Anand Fast Food</h2>
-        <p><strong>Table:</strong> ${tableToUpdate}</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>${billRows}</tbody>
-          <tfoot>
-            <tr>
-              <td colspan="3" style="text-align:right;">Total</td>
-              <td style="text-align:right;">${total.toFixed(2)}</td>
-            </tr>
-          </tfoot>
-        </table>
-        <p>Thank you!</p>
+        <img class="logo" src="${logoUrl}" alt="Anand" />
+        <div class="center bold">${branchLabel(branch, lang)}</div>
+
+        <div class="dash"></div>
+        <div class="row">
+          <span>${t('tableLabel', lang)}: <b>${tableToUpdate}</b></span>
+          <span>${dateStr} ${timeStr}</span>
+        </div>
+        <div class="dash"></div>
+
+        <div class="head">
+          <span>${lang === 'mr' ? 'तपशील' : 'Item'}</span>
+          <span class="num">${lang === 'mr' ? 'नग' : 'Qty'}</span>
+          <span class="num">${lang === 'mr' ? 'दर' : 'Rate'}</span>
+          <span class="num">${lang === 'mr' ? 'रक्कम' : 'Amt'}</span>
+        </div>
+        <div class="dash"></div>
+
+        ${billRows}
+
+        <div class="dash"></div>
+        <div class="row">
+          <span>${lang === 'mr' ? 'एकूण नग' : 'Total Qty'}</span>
+          <b>${totalQty}</b>
+        </div>
+        <div class="row grand">
+          <span>${t('total', lang)}</span>
+          <span>₹${total}</span>
+        </div>
+        <div class="dash"></div>
+
+        <div class="center small">
+          ${lang === 'mr' ? 'आपल्या भेटीबद्दल धन्यवाद! पुन्हा भेट द्या.' : 'Thank you! Visit again.'}
+        </div>
       </body>
     </html>
   `;
 
-        const w = window.open('', '_blank', 'width=320,height=480');
+        const w = window.open('', '_blank', 'width=340,height=600');
+        if (!w) {
+            alert('Please allow pop-ups to print the bill.');
+            return;
+        }
         w.document.write(printContent);
         w.document.close();
-        setTimeout(() => {
-            w.print();
-            w.close();
-        }, 300);
+
+        // wait for the logo to load before printing, otherwise it comes out blank
+        const img = w.document.querySelector('.logo');
+        let printed = false;
+        const doPrint = () => {
+            if (printed) return;
+            printed = true;
+            setTimeout(() => {
+                w.focus();
+                w.print();
+                w.close();
+            }, 200);
+        };
+        if (img && !img.complete) {
+            img.onload = doPrint;
+            img.onerror = doPrint;
+            setTimeout(doPrint, 2000); // safety fallback
+        } else {
+            doPrint();
+        }
 
         setShowCartDrawer(false);
         setViewingTableFromAllTables(null);
