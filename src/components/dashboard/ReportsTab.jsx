@@ -4,6 +4,14 @@ import { Download, Mail, FileText, Calendar, Clock, CheckCircle } from 'lucide-r
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
+import { toISTParts } from '../../lib/time';
+
+// 'dd/MM HH:mm' in IST, independent of the device timezone
+const formatISTShort = (value) => {
+  const p = toISTParts(value);
+  const z = (n) => String(n).padStart(2, '0');
+  return `${z(p.day)}/${z(p.month)} ${z(p.hour)}:${z(p.minute)}`;
+};
 
 export default function ReportsTab({ bills, dateRange, loading }) {
   const [selectedReport, setSelectedReport] = useState('summary');
@@ -99,7 +107,7 @@ export default function ReportsTab({ bills, dateRange, loading }) {
 
     bills.forEach(bill => {
       bill.items.forEach(item => {
-        const category = getCategoryForItem(item.name);
+        const category = item.category || 'Other';
         if (!categoryMap[category]) {
           categoryMap[category] = { name: category, revenue: 0, quantity: 0 };
         }
@@ -109,18 +117,6 @@ export default function ReportsTab({ bills, dateRange, loading }) {
     });
 
     return Object.values(categoryMap).sort((a, b) => b.revenue - a.revenue);
-  };
-
-  const getCategoryForItem = (itemName) => {
-    if (itemName.includes('Dabeli') || itemName.includes('Pav')) return 'Dabeli & Pavbhaji';
-    if (itemName.includes('Manchuri') || itemName.includes('Veg') || itemName.includes('Crispy')) return 'Manchurian';
-    if (itemName.includes('Rice')) return 'Rice';
-    if (itemName.includes('Noodles')) return 'Noodles';
-    if (itemName.includes('Paneer')) return 'Paneer';
-    if (itemName.includes('Soup')) return 'Soup';
-    if (itemName.includes('Drink') || itemName.includes('Water')) return 'Drinks';
-    if (itemName.includes('Ice-cream')) return 'Ice-cream';
-    return 'Other';
   };
 
   const exportToPDF = (reportType) => {
@@ -255,12 +251,16 @@ export default function ReportsTab({ bills, dateRange, loading }) {
         doc.text('Transaction Details', 14, yPos);
         yPos += 4;
 
-        const transactions = bills.slice(0, 50).map(bill => [
-          format(new Date(bill.completed_at), 'dd/MM HH:mm'),
-          `Table ${bill.table_number}`,
-          bill.items.map(i => `${i.name} x${i.qty}`).join(', ').substring(0, 50) + '...',
-          `₹${parseFloat(bill.total).toFixed(2)}`
-        ]);
+        // every bill in the period (autoTable paginates), parcel bills marked
+        const transactions = bills.map(bill => {
+          const itemsText = bill.items.map(i => `${i.name} x${i.qty}`).join(', ');
+          return [
+            formatISTShort(bill.completed_at),
+            `Table ${bill.table_number}${bill.is_parcel ? ' (Parcel)' : ''}`,
+            itemsText.length > 60 ? itemsText.substring(0, 60) + '...' : itemsText,
+            `₹${parseFloat(bill.total).toFixed(2)}`
+          ];
+        });
 
         autoTable(doc, {
           startY: yPos,

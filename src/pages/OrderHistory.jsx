@@ -1,72 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, X, Search, Calendar, IndianRupee, RefreshCw } from 'lucide-react';
+import { ArrowLeft, X, Search, Calendar, IndianRupee, RefreshCw, ShoppingBag } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { getSavedBranch, branchLabel, getSavedLanguage } from '../lib/branchMenu';
 import { translateItemName, translatePortion } from '../i18n/translations';
+import { fetchAllRows } from '../lib/fetchAll';
+import { resolveRange, formatISTDateLabel, formatISTTime } from '../lib/time';
 
-function getDateFilter(dateRange, customStartDate, customEndDate) {
-    const now = new Date();
-    let startDate, endDate;
-
-    switch (dateRange) {
-        case 'today':
-            startDate = new Date(now.setHours(0, 0, 0, 0));
-            endDate = new Date(now.setHours(23, 59, 59, 999));
-            break;
-        case 'yesterday': {
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 1);
-            startDate = new Date(yesterday.setHours(0, 0, 0, 0));
-            endDate = new Date(yesterday.setHours(23, 59, 59, 999));
-            break;
-        }
-        case 'last7days':
-            startDate = new Date();
-            startDate.setDate(startDate.getDate() - 7);
-            startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(new Date().setHours(23, 59, 59, 999));
-            break;
-        case 'last30days':
-            startDate = new Date();
-            startDate.setDate(startDate.getDate() - 30);
-            startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(new Date().setHours(23, 59, 59, 999));
-            break;
-        case 'custom':
-            if (!customStartDate || !customEndDate) return null;
-            startDate = new Date(customStartDate);
-            startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(customEndDate);
-            endDate.setHours(23, 59, 59, 999);
-            break;
-        case 'all':
-            return null; // no date filtering at all
-        default:
-            startDate = new Date(now.setHours(0, 0, 0, 0));
-            endDate = new Date(now.setHours(23, 59, 59, 999));
-    }
-
-    return { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
-}
-
-function formatDateLabel(iso) {
-    const d = new Date(iso);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const isSameDay = (a, b) =>
-        a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
-    if (isSameDay(d, today)) return 'Today';
-    if (isSameDay(d, yesterday)) return 'Yesterday';
-    return d.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function formatTimeLabel(iso) {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+const PAGE_SIZE = 100; // rows rendered at a time (everything is still fetched, just shown in chunks)
+const formatDateLabel = formatISTDateLabel;
+const formatTimeLabel = formatISTTime;
 
 export default function OrderHistory() {
     const navigate = useNavigate();
@@ -83,6 +26,8 @@ export default function OrderHistory() {
     const [minAmount, setMinAmount] = useState('');
     const [maxAmount, setMaxAmount] = useState('');
     const [tableFilter, setTableFilter] = useState('');
+    const [typeFilter, setTypeFilter] = useState('all'); // all | parcel | dinein
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
@@ -93,21 +38,22 @@ export default function OrderHistory() {
     const fetchBills = async () => {
         try {
             setLoading(true);
-            const dateFilter = getDateFilter(dateRange, customStartDate, customEndDate);
+            setVisibleCount(PAGE_SIZE);
+            const range = resolveRange(dateRange, customStartDate, customEndDate);
+            if (dateRange === 'custom' && !range) { setBills([]); return; } // waiting for both dates
 
-            let query = supabase
-                .from('completed_bills')
-                .select('*')
-                .eq('branch', branch)
-                .order('completed_at', { ascending: false }); // LIFO: most recently completed first
-
-            if (dateFilter) {
-                query = query.gte('completed_at', dateFilter.startDate).lte('completed_at', dateFilter.endDate);
-            }
-
-            const { data, error } = await query;
-            if (error) throw error;
-            setBills(data || []);
+            // paginated, so "All Time" / long ranges are never cut off at Supabase's 1000-row cap
+            const rows = await fetchAllRows(() => {
+                let query = supabase
+                    .from('completed_bills')
+                    .select('*', { count: 'exact' })
+                    .eq('branch', branch)
+                    .order('completed_at', { ascending: false }) // LIFO: most recently completed first
+                    .order('id', { ascending: true });
+                if (range) query = query.gte('completed_at', range.start).lt('completed_at', range.endExclusive);
+                return query;
+            });
+            setBills(rows);
         } catch (err) {
             console.error('Error loading order history:', err);
         } finally {
@@ -120,15 +66,18 @@ export default function OrderHistory() {
             if (minAmount !== '' && bill.total < parseFloat(minAmount)) return false;
             if (maxAmount !== '' && bill.total > parseFloat(maxAmount)) return false;
             if (tableFilter !== '' && String(bill.table_number) !== tableFilter.trim()) return false;
+            if (typeFilter === 'parcel' && !bill.is_parcel) return false;
+            if (typeFilter === 'dinein' && bill.is_parcel) return false;
             return true;
         });
-    }, [bills, minAmount, maxAmount, tableFilter]);
+    }, [bills, minAmount, maxAmount, tableFilter, typeFilter]);
 
     const activeFilterCount =
         (dateRange !== 'today' ? 1 : 0) +
         (minAmount !== '' ? 1 : 0) +
         (maxAmount !== '' ? 1 : 0) +
-        (tableFilter !== '' ? 1 : 0);
+        (tableFilter !== '' ? 1 : 0) +
+        (typeFilter !== 'all' ? 1 : 0);
 
     const clearFilters = () => {
         setDateRange('today');
@@ -137,6 +86,7 @@ export default function OrderHistory() {
         setMinAmount('');
         setMaxAmount('');
         setTableFilter('');
+        setTypeFilter('all');
     };
 
     return (
@@ -243,6 +193,23 @@ export default function OrderHistory() {
                         </div>
 
                         <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">Order Type</label>
+                            <div className="flex gap-2">
+                                {[['all', 'All'], ['dinein', 'Dine-in'], ['parcel', 'Parcel']].map(([id, label]) => (
+                                    <button
+                                        key={id}
+                                        onClick={() => setTypeFilter(id)}
+                                        className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${typeFilter === id
+                                            ? (id === 'parcel' ? 'bg-purple-600 text-white border-purple-600' : 'bg-orange-500 text-white border-orange-500')
+                                            : 'bg-white text-gray-600 border-gray-200'}`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
                             <label className="text-xs font-semibold text-gray-500 mb-1 block">Table Number</label>
                             <input
                                 type="number"
@@ -271,7 +238,10 @@ export default function OrderHistory() {
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {filteredBills.map(bill => (
+                        <p className="text-xs text-gray-400 px-1">
+                            {filteredBills.length} bill{filteredBills.length === 1 ? '' : 's'} · ₹{filteredBills.reduce((s, b) => s + (parseFloat(b.total) || 0), 0).toLocaleString('en-IN')}
+                        </p>
+                        {filteredBills.slice(0, visibleCount).map(bill => (
                             <button
                                 key={bill.id}
                                 onClick={() => setSelectedBill(bill)}
@@ -285,14 +255,28 @@ export default function OrderHistory() {
                                         <p className="font-semibold text-gray-800">
                                             {formatDateLabel(bill.completed_at)} · {formatTimeLabel(bill.completed_at)}
                                         </p>
-                                        <p className="text-xs text-gray-400">
-                                            {(bill.items || []).length} item{(bill.items || []).length === 1 ? '' : 's'}
+                                        <p className="text-xs text-gray-400 flex items-center gap-2">
+                                            <span>{(bill.items || []).length} item{(bill.items || []).length === 1 ? '' : 's'}</span>
+                                            {bill.is_parcel && (
+                                                <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 font-semibold rounded-full px-2 py-0.5">
+                                                    <ShoppingBag size={10} /> Parcel
+                                                </span>
+                                            )}
                                         </p>
                                     </div>
                                 </div>
                                 <p className="text-lg font-bold text-orange-600">₹{bill.total}</p>
                             </button>
                         ))}
+
+                        {filteredBills.length > visibleCount && (
+                            <button
+                                onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                                className="w-full py-3 rounded-xl bg-white border border-gray-200 text-orange-600 font-semibold"
+                            >
+                                Show more ({filteredBills.length - visibleCount} remaining)
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -303,7 +287,14 @@ export default function OrderHistory() {
                     <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl max-h-[85vh] flex flex-col">
                         <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
                             <div>
-                                <h2 className="text-lg font-bold">Table {selectedBill.table_number}</h2>
+                                <h2 className="text-lg font-bold flex items-center gap-2">
+                                    Table {selectedBill.table_number}
+                                    {selectedBill.is_parcel && (
+                                        <span className="inline-flex items-center gap-1 bg-purple-600 text-white text-xs font-semibold rounded-full px-2 py-0.5">
+                                            <ShoppingBag size={11} /> Parcel
+                                        </span>
+                                    )}
+                                </h2>
                                 <p className="text-xs text-gray-500">
                                     {formatDateLabel(selectedBill.completed_at)} · {formatTimeLabel(selectedBill.completed_at)}
                                 </p>

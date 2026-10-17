@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, EyeOff, Eye, UtensilsCrossed, Languages, History, ArrowRightLeft, ListPlus } from 'lucide-react';
+import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag } from 'lucide-react';
 import { supabase } from './config/supabase';
-import menuItems from './data/items';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
 import {
     BRANCH_OPTIONS,
@@ -11,13 +10,11 @@ import {
     branchLabel,
     getSavedLanguage,
     saveLanguage,
-    fetchMenuSettings,
-    saveMenuSettings,
-    mergeMenu,
-    priceKey,
-    emptyMenuSettings,
     fetchItemFrequency,
 } from './lib/branchMenu';
+import { fetchMenuItems, getCategories } from './lib/menu';
+import { toISTParts } from './lib/time';
+import MenuManager from './components/menu/MenuManager';
 
 
 /* ---------------- Header ---------------- */
@@ -170,10 +167,10 @@ const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
     // Expects a single-option item (see flattenRatePickerItems in the main App).
     if (item.ratePicker) {
         const opt = item.options[0];
-        const qty = getQty ? getQty(item.name, opt.portion) : 0;
+        const qty = getQty ? getQty(item.name, opt.portion, item.category) : 0;
         return (
             <button
-                onClick={() => onAddItem(item.name, opt.portion, opt.price)}
+                onClick={() => onAddItem(item.name, opt.portion, opt.price, item.category)}
                 className="relative bg-orange-50 rounded-lg border border-orange-200 flex items-center justify-center py-2.5 active:bg-orange-100"
             >
                 <span className="text-orange-700 font-bold text-base">₹{opt.price}</span>
@@ -192,7 +189,7 @@ const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
     return (
         <div className="bg-white rounded-xl border border-gray-300 overflow-hidden flex flex-col h-60">
             <div
-                onClick={() => onAddItem(item.name, defaultOption.portion, defaultOption.price)}
+                onClick={() => onAddItem(item.name, defaultOption.portion, defaultOption.price, item.category)}
                 className="cursor-pointer flex-1 flex flex-col"
             >
                 {item.img ? (
@@ -221,11 +218,11 @@ const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
             {hasMultipleOptions && (
                 <div className="px-3 pb-3 flex gap-2">
                     {item.options.slice(1).map((opt, i) => {
-                        const optQty = getQty ? getQty(item.name, opt.portion) : 0;
+                        const optQty = getQty ? getQty(item.name, opt.portion, item.category) : 0;
                         return (
                             <button
                                 key={i}
-                                onClick={() => onAddItem(item.name, opt.portion, opt.price)}
+                                onClick={() => onAddItem(item.name, opt.portion, opt.price, item.category)}
                                 className="relative flex-1 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-200 active:bg-orange-100"
                             >
                                 {translatePortion(opt.portion, lang)} ₹{opt.price}
@@ -246,13 +243,7 @@ const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
 /* ---------------- Cart Drawer (Mobile) ---------------- */
 
 // bottom drawer for current table bill
-const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, lang }) => {
-    // Local UI state: resets to defaults every time the drawer is opened (it's
-    // only mounted while showCartDrawer is true), which is exactly what we want
-    // for the language toggle — it always starts back at whatever's set in
-    // Settings, and a tap only changes it "for this viewing".
-    const [cartLang, setCartLang] = useState(lang);
-
+const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, lang }) => {
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
             <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
@@ -260,23 +251,22 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                     below, so closing the drawer is never at risk of a mis-tap. */}
                 <div className="flex justify-between items-center px-4 pt-4 pb-2 sticky top-0 bg-white z-10">
                     <h2 className="text-xl font-bold truncate">
-                        {selectedTable ? `${t('tableLabel', cartLang)} ${selectedTable}` : t('cart', cartLang)}
+                        {selectedTable ? `${t('tableLabel', lang)} ${selectedTable}` : t('cart', lang)}
                     </h2>
-                    <button onClick={onClose} className="p-1 -mr-1 shrink-0" aria-label={t('close', cartLang)}>
+                    <button onClick={onClose} className="p-1 -mr-1 shrink-0" aria-label={t('close', lang)}>
                         <X size={24} />
                     </button>
                 </div>
 
-                {/* Action row: add more items / shift table / language — each a
-                    full-height labeled button so all three stay easy to tell apart
-                    and easy to hit, even with four controls total in this header. */}
+                {/* Action row: add more items / shift table / parcel. Parcel is a toggle:
+                    white while off, purple once this order is marked as a parcel. */}
                 <div className="flex items-stretch gap-2 px-4 pb-3 border-b sticky top-[52px] bg-white z-10">
                     <button
                         onClick={onQuickAdd}
                         className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-green-50 text-green-700 active:bg-green-100"
                     >
                         <ListPlus size={18} />
-                        <span className="text-[10px] font-semibold leading-tight">{t('addMore', cartLang)}</span>
+                        <span className="text-[10px] font-semibold leading-tight">{t('addMore', lang)}</span>
                     </button>
 
                     <button
@@ -284,15 +274,20 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                         className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-blue-50 text-blue-700 active:bg-blue-100"
                     >
                         <ArrowRightLeft size={18} />
-                        <span className="text-[10px] font-semibold leading-tight">{t('shiftTable', cartLang)}</span>
+                        <span className="text-[10px] font-semibold leading-tight">{t('shiftTable', lang)}</span>
                     </button>
 
                     <button
-                        onClick={() => setCartLang(l => l === 'en' ? 'mr' : 'en')}
-                        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-gray-50 text-gray-700 active:bg-gray-100"
+                        onClick={onToggleParcel}
+                        disabled={currentBill.length === 0}
+                        aria-pressed={!!isParcel}
+                        className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl border transition-colors disabled:opacity-40 ${isParcel
+                            ? 'bg-purple-600 text-white border-purple-600 active:bg-purple-700'
+                            : 'bg-white text-gray-700 border-gray-300 active:bg-gray-100'
+                            }`}
                     >
-                        <Languages size={18} />
-                        <span className="text-[10px] font-semibold leading-tight">{cartLang === 'en' ? 'मराठी' : 'English'}</span>
+                        <ShoppingBag size={18} />
+                        <span className="text-[10px] font-semibold leading-tight">{t('parcel', lang)}</span>
                     </button>
                 </div>
 
@@ -300,7 +295,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                     {currentBill.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
                             <ShoppingCart size={48} className="mx-auto mb-2 opacity-50" />
-                            <p>{t('noItemsAdded', cartLang)}</p>
+                            <p>{t('noItemsAdded', lang)}</p>
                         </div>
                     ) : (
                         currentBill.map((item, idx) => (
@@ -308,12 +303,12 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                                 <div>
                                     <p className="font-medium">
                                         <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
-                                        {translateItemName(item.name, cartLang)}
+                                        {translateItemName(item.name, lang)}
                                     </p>
                                     <p className="text-sm text-gray-500">
-                                        {translatePortion(item.portion, cartLang)}
+                                        {translatePortion(item.portion, lang)}
                                         <span className="mx-1">·</span>
-                                        <span className="text-orange-600 font-medium">₹{item.price} {t('each', cartLang)}</span>
+                                        <span className="text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
                                     </p>
                                 </div>
 
@@ -348,7 +343,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 
                 <div className="border-t p-4 space-y-3">
                     <div className="flex justify-between font-bold text-xl">
-                        <span>{t('total', cartLang)}</span>
+                        <span>{t('total', lang)}</span>
                         <span className="text-orange-600">₹{total}</span>
                     </div>
 
@@ -361,7 +356,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                shadow-md flex items-center justify-center gap-2"
                         >
                             <Trash2 size={20} />
-                            {t('clearBill', cartLang)}
+                            {t('clearBill', lang)}
                         </button>
 
                         <button
@@ -372,7 +367,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                shadow-md flex items-center justify-center gap-2"
                         >
                             <Printer size={20} />
-                            {t('printBill', cartLang)}
+                            {t('printBill', lang)}
                         </button>
                     </div>
 
@@ -384,7 +379,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 
 
 // overview of all tables with running totals
-const AllTablesGrid = ({ tables, bills, onTableClick }) => {
+const AllTablesGrid = ({ tables, bills, parcels, onTableClick, lang }) => {
     const getTableTotal = (tableNum) => {
         const bill = bills[tableNum] || [];
         return bill.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -411,6 +406,11 @@ const AllTablesGrid = ({ tables, bills, onTableClick }) => {
                             className="aspect-square bg-gray-50 border-2 border-gray-200 rounded-xl p-3 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
                         >
                             <span className="text-lg font-bold text-gray-700 mb-2">T{num}</span>
+                            {!empty && parcels[num] && (
+                                <span className="mb-1 text-[10px] font-bold text-white bg-purple-600 rounded-full px-2 py-0.5 flex items-center gap-1">
+                                    <ShoppingBag size={10} /> {t('parcelBadge', lang)}
+                                </span>
+                            )}
                             {empty ? (
                                 <span className="text-sm text-gray-400">—</span>
                             ) : (
@@ -454,7 +454,7 @@ const BottomNavigation = ({ activeTab, onTabChange, lang }) => (
 );
 
 
-const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
+const DesktopTableGrid = ({ tables, bills, parcels, selectedTable, onSelectTable }) => {
     const getTotal = (tableNum) => {
         const bill = bills[tableNum] || [];
         return bill.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -483,6 +483,11 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
                             `}
                         >
 
+                            {total > 0 && parcels[num] && (
+                                <span className="absolute top-1 right-1 bg-purple-600 text-white rounded-full p-1" title="Parcel">
+                                    <ShoppingBag size={11} />
+                                </span>
+                            )}
                             <span className="text-base font-semibold">T{num}</span>
 
                             {total > 0 ? (
@@ -537,19 +542,13 @@ const DesktopTableGrid = ({ tables, bills, selectedTable, onSelectTable }) => {
 
 
 // fixed bill section on desktop
-const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, lang }) => {
-    const [billLang, setBillLang] = useState(lang);
-
-    // keep in step if the global language changes while this panel is mounted
-    // (it's always on-screen on desktop, unlike the mobile cart drawer)
-    useEffect(() => { setBillLang(lang); }, [lang]);
-
+const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, lang }) => {
     return (
         <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
             {/* current table info */}
             <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
-                {selectedTable ? `${t('billFor', billLang)} ${selectedTable}` : t('billSelectTable', billLang)}
+                {selectedTable ? `${t('billFor', lang)} ${selectedTable}` : t('billSelectTable', lang)}
             </h3>
 
             {/* scrollable bill items */}
@@ -558,9 +557,9 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                     <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
                         <span className="flex-1 text-gray-800">
                             <span className="text-gray-400 mr-1">{idx + 1}.</span>
-                            {translateItemName(item.name, billLang)} ({translatePortion(item.portion, billLang)})
+                            {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
                             <span className="block text-xs text-orange-600 font-medium">
-                                ₹{item.price} {t('each', billLang)}
+                                ₹{item.price} {t('each', lang)}
                             </span>
                         </span>
 
@@ -594,18 +593,21 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
 
             {/* total + actions pinned at bottom */}
             <div className="bill-buttons bg-white pt-2 pb-2 shadow-[0_-2px_8px_rgba(0,0,0,0.1)] sticky bottom-0 z-10">
-                <div className="flex justify-end mb-2">
-                    <button
-                        onClick={() => setBillLang(l => l === 'en' ? 'mr' : 'en')}
-                        className="p-2 rounded-full bg-gray-100 text-gray-600"
-                        title={billLang === 'en' ? 'मराठी' : 'English'}
-                    >
-                        <Languages size={18} />
-                    </button>
-                </div>
+                <button
+                    onClick={onToggleParcel}
+                    disabled={currentBill.length === 0}
+                    aria-pressed={!!isParcel}
+                    className={`w-full mb-2 py-2 rounded-lg font-semibold border flex items-center justify-center gap-2 transition-colors disabled:opacity-40 ${isParcel
+                        ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                        }`}
+                >
+                    <ShoppingBag size={18} />
+                    {t('parcel', lang)}
+                </button>
 
                 <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3">
-                    {t('total', billLang)}: ₹{total}
+                    {t('total', lang)}: ₹{total}
                 </div>
 
                 <div className="flex gap-4">
@@ -613,14 +615,14 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                         onClick={onPrintBill}
                         className="flex-1 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all"
                     >
-                        {t('printBill', billLang)}
+                        {t('printBill', lang)}
                     </button>
 
                     <button
                         onClick={onClearBill}
                         className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all"
                     >
-                        {t('clearBill', billLang)}
+                        {t('clearBill', lang)}
                     </button>
                 </div>
             </div>
@@ -729,277 +731,6 @@ const SettingsModal = ({ lang, onChangeLang, branch, onOpenMenuManager, onOpenHi
     </div>
 );
 
-/* ---------------- Menu Manager Modal (Update Menu) ---------------- */
-
-const MenuManagerModal = ({ lang, mergedMenu, categories, menuSettings, onSaveSettings, onClose }) => {
-    const [localSettings, setLocalSettings] = useState(menuSettings);
-    const [saving, setSaving] = useState(false);
-    const [editingPrice, setEditingPrice] = useState(null); // `${name}||${portion}`
-    const [priceDraft, setPriceDraft] = useState('');
-
-    const [showAddForm, setShowAddForm] = useState(false);
-    const [newName, setNewName] = useState('');
-    const [newCategory, setNewCategory] = useState(categories[0] || '');
-    const [newPortions, setNewPortions] = useState([{ portion: '', price: '' }]);
-
-    const persist = async (next) => {
-        setLocalSettings(next);
-        setSaving(true);
-        try {
-            await onSaveSettings(next);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const startEditPrice = (name, portion, currentPrice) => {
-        setEditingPrice(priceKey(name, portion));
-        setPriceDraft(String(currentPrice));
-    };
-
-    const confirmEditPrice = async (name, portion) => {
-        const value = parseFloat(priceDraft);
-        if (isNaN(value) || value < 0) {
-            setEditingPrice(null);
-            return;
-        }
-        const next = {
-            ...localSettings,
-            price_overrides: { ...localSettings.price_overrides, [priceKey(name, portion)]: value },
-        };
-        setEditingPrice(null);
-        await persist(next);
-    };
-
-    const toggleHidden = async (name) => {
-        const hidden = new Set(localSettings.hidden_items || []);
-        if (hidden.has(name)) hidden.delete(name); else hidden.add(name);
-        await persist({ ...localSettings, hidden_items: Array.from(hidden) });
-    };
-
-    const removeCustomItem = async (name) => {
-        if (!window.confirm(t('confirmDeleteCustomItem', lang))) return;
-        const next = {
-            ...localSettings,
-            custom_items: (localSettings.custom_items || []).filter(i => i.name !== name),
-        };
-        await persist(next);
-    };
-
-    const addPortionRow = () => setNewPortions(p => [...p, { portion: '', price: '' }]);
-    const updatePortionRow = (idx, field, value) => {
-        setNewPortions(p => p.map((row, i) => i === idx ? { ...row, [field]: value } : row));
-    };
-    const removePortionRow = (idx) => setNewPortions(p => p.filter((_, i) => i !== idx));
-
-    const submitNewItem = async () => {
-        const cleanPortions = newPortions
-            .map(p => ({ portion: p.portion.trim(), price: parseFloat(p.price) }))
-            .filter(p => p.portion && !isNaN(p.price) && p.price >= 0);
-
-        if (!newName.trim() || !newCategory.trim() || cleanPortions.length === 0) {
-            alert(t('fillAllFields', lang));
-            return;
-        }
-
-        const newItem = {
-            name: newName.trim(),
-            category: newCategory.trim(),
-            img: null,
-            options: cleanPortions,
-        };
-
-        const next = {
-            ...localSettings,
-            custom_items: [...(localSettings.custom_items || []), newItem],
-        };
-        await persist(next);
-
-        setNewName('');
-        setNewPortions([{ portion: '', price: '' }]);
-        setShowAddForm(false);
-    };
-
-    const hiddenSet = new Set(localSettings.hidden_items || []);
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-[55] flex items-end md:items-center justify-center">
-            <div className="bg-white w-full md:w-[32rem] rounded-t-2xl md:rounded-2xl max-h-[90vh] flex flex-col">
-                <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
-                    <h2 className="text-xl font-bold flex items-center gap-2">
-                        <UtensilsCrossed size={20} />
-                        {t('updateMenu', lang)}
-                        {saving && <span className="text-xs font-normal text-gray-400">({t('savingChanges', lang)})</span>}
-                    </h2>
-                    <button onClick={onClose}><X size={24} /></button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    <p className="text-xs text-gray-500">{t('priceOverrideNote', lang)}</p>
-
-                    {mergedMenu.map((item) => (
-                        <div
-                            key={item.name}
-                            className={`border rounded-xl p-3 ${hiddenSet.has(item.name) ? 'opacity-50 border-gray-200' : 'border-gray-300'}`}
-                        >
-                            <div className="flex justify-between items-start mb-2">
-                                <div>
-                                    <p className="font-bold text-gray-800">
-                                        {translateItemName(item.name, lang)}
-                                        {item.isCustom && (
-                                            <span className="ml-2 text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full align-middle">
-                                                {t('addNewItem', lang)}
-                                            </span>
-                                        )}
-                                    </p>
-                                    <p className="text-xs text-gray-400">{translateCategory(item.category, lang)}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {/* Hide/show toggle is temporarily disabled for items that are
-                                        currently visible, to prevent accidental taps from hiding them.
-                                        It still works to UN-hide an item that's already hidden. */}
-                                    {hiddenSet.has(item.name) ? (
-                                        <button
-                                            onClick={() => toggleHidden(item.name)}
-                                            className="p-2 rounded-full bg-gray-100"
-                                            title={t('unhide', lang)}
-                                        >
-                                            <EyeOff size={16} />
-                                        </button>
-                                    ) : (
-                                        <button
-                                            disabled
-                                            className="p-2 rounded-full bg-gray-50 text-gray-300 cursor-not-allowed"
-                                            title="Hide is temporarily disabled"
-                                        >
-                                            <Eye size={16} />
-                                        </button>
-                                    )}
-                                    {item.isCustom && (
-                                        <button
-                                            onClick={() => removeCustomItem(item.name)}
-                                            className="p-2 rounded-full bg-red-50 text-red-600"
-                                            title={t('deleteItem', lang)}
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                                {item.options.map((opt) => {
-                                    const key = priceKey(item.name, opt.portion);
-                                    const isEditing = editingPrice === key;
-                                    return (
-                                        <div key={key} className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-sm">
-                                            <span className="text-gray-600">{translatePortion(opt.portion, lang)}</span>
-                                            {isEditing ? (
-                                                <input
-                                                    autoFocus
-                                                    type="number"
-                                                    value={priceDraft}
-                                                    onChange={(e) => setPriceDraft(e.target.value)}
-                                                    onBlur={() => confirmEditPrice(item.name, opt.portion)}
-                                                    onKeyDown={(e) => e.key === 'Enter' && confirmEditPrice(item.name, opt.portion)}
-                                                    className="w-16 border rounded px-1 text-right"
-                                                />
-                                            ) : (
-                                                <button
-                                                    onClick={() => startEditPrice(item.name, opt.portion, opt.price)}
-                                                    className="font-bold text-orange-600"
-                                                >
-                                                    ₹{opt.price}
-                                                </button>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ))}
-
-                    {/* Add new item */}
-                    {!showAddForm ? (
-                        <button
-                            onClick={() => setShowAddForm(true)}
-                            className="w-full py-3 rounded-xl border-2 border-dashed border-orange-300 text-orange-600 font-bold flex items-center justify-center gap-2"
-                        >
-                            <Plus size={18} />
-                            {t('addNewItem', lang)}
-                        </button>
-                    ) : (
-                        <div className="border border-orange-200 rounded-xl p-3 space-y-3 bg-orange-50">
-                            <p className="text-xs text-gray-500">{t('menuItemsCustomNote', lang)}</p>
-
-                            <input
-                                placeholder={t('itemName', lang)}
-                                value={newName}
-                                onChange={(e) => setNewName(e.target.value)}
-                                className="w-full border rounded-lg px-3 py-2"
-                            />
-
-                            <input
-                                list="category-options"
-                                placeholder={t('category', lang)}
-                                value={newCategory}
-                                onChange={(e) => setNewCategory(e.target.value)}
-                                className="w-full border rounded-lg px-3 py-2"
-                            />
-                            <datalist id="category-options">
-                                {categories.map(c => <option key={c} value={c} />)}
-                            </datalist>
-
-                            {newPortions.map((row, idx) => (
-                                <div key={idx} className="flex gap-2">
-                                    <input
-                                        placeholder={t('portion', lang)}
-                                        value={row.portion}
-                                        onChange={(e) => updatePortionRow(idx, 'portion', e.target.value)}
-                                        className="flex-1 border rounded-lg px-3 py-2"
-                                    />
-                                    <input
-                                        type="number"
-                                        placeholder={t('price', lang)}
-                                        value={row.price}
-                                        onChange={(e) => updatePortionRow(idx, 'price', e.target.value)}
-                                        className="w-24 border rounded-lg px-3 py-2"
-                                    />
-                                    {newPortions.length > 1 && (
-                                        <button onClick={() => removePortionRow(idx)} className="px-2 text-red-500">
-                                            <X size={18} />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-
-                            <button onClick={addPortionRow} className="text-sm text-orange-600 font-semibold">
-                                + {t('addPortion', lang)}
-                            </button>
-
-                            <div className="flex gap-2 pt-1">
-                                <button
-                                    onClick={() => setShowAddForm(false)}
-                                    className="flex-1 py-2 rounded-lg bg-gray-200 text-gray-700 font-bold"
-                                >
-                                    {t('cancel', lang)}
-                                </button>
-                                <button
-                                    onClick={submitNewItem}
-                                    className="flex-1 py-2 rounded-lg bg-orange-500 text-white font-bold"
-                                >
-                                    {t('save', lang)}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
 // Main App
 export default function RestaurantBillGenerator() {
     const navigate = useNavigate();
@@ -1065,7 +796,15 @@ export default function RestaurantBillGenerator() {
     // settings / menu manager
     const [showSettings, setShowSettings] = useState(false);
     const [showMenuManager, setShowMenuManager] = useState(false);
-    const [menuSettings, setMenuSettings] = useState(emptyMenuSettings());
+    // menu comes from the shared `menu_items` table (same for every branch)
+    const [menuItems, setMenuItems] = useState([]);
+    const [menuWarning, setMenuWarning] = useState(false);
+
+    // which tables are marked "Parcel" ({ tableNo: true }); mirrored in a ref for the same
+    // reason as billsRef (the save queue must always read the latest value)
+    const [parcels, setParcels] = useState({});
+    const parcelsRef = useRef({});
+    const setParcelsBoth = (next) => { parcelsRef.current = next; setParcels(next); };
 
     // "Fav" tab: how often each item has actually been ordered at this branch
     const [itemFrequency, setItemFrequency] = useState({});
@@ -1128,11 +867,20 @@ export default function RestaurantBillGenerator() {
         }
     }, [branch]);
 
-    // Load per-branch menu settings (price overrides / custom items / hidden items)
+    // Load the menu from the database (and pick up edits made on another device
+    // whenever this one comes back to the foreground).
+    const loadMenu = async () => {
+        const { items, fromCache, error } = await fetchMenuItems();
+        setMenuItems(items);
+        setMenuWarning(!!error && fromCache);
+    };
+
     useEffect(() => {
-        if (!branch) return;
-        fetchMenuSettings(branch).then(setMenuSettings);
-    }, [branch]);
+        loadMenu();
+        const onVisible = () => { if (document.visibilityState === 'visible') loadMenu(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, []);
 
     // Load "Fav" tab data (most frequently ordered items) for this branch
     useEffect(() => {
@@ -1190,6 +938,7 @@ export default function RestaurantBillGenerator() {
                             ...prev,
                             [row.table_number]: []
                         }));
+                        setParcelsBoth({ ...parcelsRef.current, [row.table_number]: false });
                         return;
                     }
 
@@ -1197,6 +946,7 @@ export default function RestaurantBillGenerator() {
                         ...prev,
                         [row.table_number]: row.items || []
                     }));
+                    setParcelsBoth({ ...parcelsRef.current, [row.table_number]: !!row.is_parcel });
                 }
             )
             .subscribe((status) => {
@@ -1251,9 +1001,11 @@ export default function RestaurantBillGenerator() {
             console.log('📥 Loaded from Supabase:', data);
 
             const loadedBills = {};
+            const loadedParcels = {};
             tables.forEach(num => {
                 const tableBill = data.find(b => b.table_number === num);
                 loadedBills[num] = tableBill ? tableBill.items : [];
+                loadedParcels[num] = !!(tableBill && tableBill.is_parcel);
 
                 if (tableBill) {
                     console.log(`Table ${num} items:`, tableBill.items);
@@ -1262,6 +1014,7 @@ export default function RestaurantBillGenerator() {
 
             console.log('📊 Final bills state:', loadedBills);
             setBills(loadedBills);
+            setParcelsBoth(loadedParcels);
         } catch (error) {
             console.error('Error loading bills:', error);
             const initialBills = {};
@@ -1304,6 +1057,7 @@ export default function RestaurantBillGenerator() {
                     .update({
                         items,
                         total,
+                        is_parcel: !!parcelsRef.current[tableNumber],
                         updated_at: new Date().toISOString(),
                         version: nextVersion
                     })
@@ -1324,6 +1078,7 @@ export default function RestaurantBillGenerator() {
                         table_number: tableNumber,
                         items,
                         total,
+                        is_parcel: !!parcelsRef.current[tableNumber],
                         status: 'active',
                         branch,
                         version: Date.now()
@@ -1357,11 +1112,9 @@ export default function RestaurantBillGenerator() {
 
     };
 
-    // Customer-facing menu: hidden items dropped entirely
-    const mergedMenuItems = useMemo(() => mergeMenu(menuItems, menuSettings), [menuSettings]);
-    // Manager-facing menu: hidden items kept (tagged isHidden) so they can still be un-hidden
-    const managerMenuItems = useMemo(() => mergeMenu(menuItems, menuSettings, { includeHidden: true }), [menuSettings]);
-    const categories = [...new Set(mergedMenuItems.map(item => item.category))];
+    // Customer-facing menu: items switched off in Update Menu are not shown
+    const mergedMenuItems = useMemo(() => menuItems.filter(item => !item.isHidden), [menuItems]);
+    const categories = useMemo(() => getCategories(mergedMenuItems), [mergedMenuItems]);
 
     // "Fav" (replaces the old "All"): the items ordered most often at this branch,
     // most-ordered first. Falls back to the first few menu items until there's
@@ -1416,7 +1169,7 @@ export default function RestaurantBillGenerator() {
     // adds an item to the selected table's bill
     // uses optimistic update so UI feels instant
 
-    const addItemToBill = async (name, portion, price) => {
+    const addItemToBill = async (name, portion, price, category) => {
         if (!selectedTable) {
             setShowTableModal(true);
             return;
@@ -1428,15 +1181,17 @@ export default function RestaurantBillGenerator() {
         const bill = [...(newBills[selectedTable] || [])];
 
         // check if same item + portion already exists
+        // (category is part of the match: e.g. "Combination" exists under both Rice and Noodles.
+        //  Lines saved before categories were recorded have none and match on name + portion.)
         const existingIndex = bill.findIndex(
-            b => b.name === name && b.portion === portion
+            b => b.name === name && b.portion === portion && (!b.category || !category || b.category === category)
         );
 
         if (existingIndex >= 0) {
             const existing = bill[existingIndex];
             bill[existingIndex] = { ...existing, qty: existing.qty + 1 };
         } else {
-            bill.push({ name, portion, price, qty: 1 });
+            bill.push({ name, portion, price, qty: 1, category });
         }
 
         newBills[selectedTable] = bill;
@@ -1473,10 +1228,24 @@ export default function RestaurantBillGenerator() {
         billsRef.current = newBills;
         setBills(newBills);
 
+        // an emptied table is no longer a parcel order
+        if (bill.length === 0 && parcelsRef.current[tableToUpdate]) {
+            setParcelsBoth({ ...parcelsRef.current, [tableToUpdate]: false });
+        }
+
         // persist changes (serialized per-table)
         await enqueueSave(tableToUpdate, bill);
     };
 
+
+    // marks / unmarks the open order as a parcel (saved with the bill, so every device sees it)
+    const toggleParcel = async (table) => {
+        if (!table) return;
+        const items = billsRef.current[table] || [];
+        if (items.length === 0) return;
+        setParcelsBoth({ ...parcelsRef.current, [table]: !parcelsRef.current[table] });
+        await enqueueSave(table, items);
+    };
 
     // clears current table bill and moves it to completed_bills
     const clearBill = async () => {
@@ -1496,6 +1265,10 @@ export default function RestaurantBillGenerator() {
                     0
                 );
                 const now = new Date();
+                // day / hour / date are always the IST (Asia/Kolkata) values, whatever the device's
+                // own timezone is. completed_at itself stays a UTC instant (the column is
+                // `timestamp without time zone`, so it holds UTC wall-clock time).
+                const ist = toISTParts(now);
 
                 // save completed bill for analytics
                 const { error: insertError } = await supabase
@@ -1506,9 +1279,10 @@ export default function RestaurantBillGenerator() {
                         total,
                         branch,
                         completed_at: now.toISOString(),
-                        day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' }),
-                        hour_of_day: now.getHours(),
-                        date: now.toISOString().split('T')[0]
+                        day_of_week: ist.weekday,
+                        hour_of_day: ist.hour,
+                        date: ist.dateKey,
+                        is_parcel: !!parcelsRef.current[tableToUpdate]
                     });
 
                 if (insertError) throw insertError;
@@ -1526,6 +1300,7 @@ export default function RestaurantBillGenerator() {
                 // reset local state
                 billsRef.current = { ...billsRef.current, [tableToUpdate]: [] };
                 setBills(prev => ({ ...prev, [tableToUpdate]: [] }));
+                setParcelsBoth({ ...parcelsRef.current, [tableToUpdate]: false });
                 setShowCartDrawer(false);
                 setViewingTableFromAllTables(null);
 
@@ -1549,8 +1324,9 @@ export default function RestaurantBillGenerator() {
         if (items.length === 0) return;
 
         const now = new Date();
-        const dateStr = now.toLocaleDateString('en-IN');
-        const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = now.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+        const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+        const isParcelOrder = !!parcelsRef.current[tableToUpdate];
         const logoUrl = `${window.location.origin}/anand-logo-bw.png`;
 
         let total = 0;
@@ -1623,6 +1399,7 @@ export default function RestaurantBillGenerator() {
       <body>
         <img class="logo" src="${logoUrl}" alt="Anand" />
         <div class="center bold">${branchLabel(branch, lang)}</div>
+        ${isParcelOrder ? `<div class="center bold" style="font-size:15px;border:1px solid #000;margin:1.5mm 0 0;padding:0.5mm 0;">${t('parcel', lang).toUpperCase()}</div>` : ''}
 
         <div class="dash"></div>
         <div class="row">
@@ -1736,6 +1513,7 @@ export default function RestaurantBillGenerator() {
         const newBills = { ...billsRef.current, [destTable]: sourceItems, [sourceTable]: [] };
         billsRef.current = newBills;
         setBills(newBills);
+        setParcelsBoth({ ...parcelsRef.current, [destTable]: !!parcelsRef.current[sourceTable], [sourceTable]: false });
         setShowShiftModal(false);
 
         // persist both sides — independent per-table saves, safely serialized
@@ -1759,6 +1537,7 @@ export default function RestaurantBillGenerator() {
         setSelectedTable(null);
         localStorage.removeItem('selectedTable');
         setBills({});
+        setParcelsBoth({});
     };
 
     const handleRequestChangeBranch = () => {
@@ -1773,16 +1552,6 @@ export default function RestaurantBillGenerator() {
         setLang(code);
     };
 
-    const handleSaveMenuSettings = async (next) => {
-        setMenuSettings(next);
-        try {
-            await saveMenuSettings(branch, next);
-        } catch (error) {
-            console.error('Error saving menu settings:', error);
-            alert('Failed to save menu changes. Please try again.');
-        }
-    };
-
     const currentBill = selectedTable ? bills[selectedTable] || [] : [];
     const total = currentBill.reduce((sum, item) => sum + item.price * item.qty, 0);
     const cartItemCount = currentBill.reduce((sum, item) => sum + item.qty, 0);
@@ -1791,9 +1560,9 @@ export default function RestaurantBillGenerator() {
     const viewingBill = viewingTableFromAllTables ? bills[viewingTableFromAllTables] || [] : currentBill;
     const viewingTotal = viewingBill.reduce((sum, item) => sum + item.price * item.qty, 0);
 
-    const getItemQty = (itemName, portion) => {
+    const getItemQty = (itemName, portion, category) => {
         if (!selectedTable) return 0;
-        const item = currentBill.find(b => b.name === itemName && b.portion === portion);
+        const item = currentBill.find(b => b.name === itemName && b.portion === portion && (!b.category || !category || b.category === category));
         return item ? item.qty : 0;
     };
 
@@ -1867,6 +1636,7 @@ export default function RestaurantBillGenerator() {
                         <DesktopTableGrid
                             tables={tables}
                             bills={bills}
+                            parcels={parcels}
                             selectedTable={selectedTable}
                             onSelectTable={setSelectedTable}
                             className="tableselectstyle w-[20%]"
@@ -1912,12 +1682,18 @@ export default function RestaurantBillGenerator() {
                                 w-full`}
                             >
 
+                                {filteredMenu.length === 0 && (
+                                    <p className="col-span-full text-center text-gray-400 py-12">
+                                        {menuItems.length === 0 ? t('noMenuItems', lang) : t('noFavoritesYet', lang)}
+                                    </p>
+                                )}
+
                                 {filteredMenu.map((item, idx) => (
                                     <MenuItem
                                         key={idx}
                                         item={item}
                                         onAddItem={addItemToBill}
-                                        currentQty={getItemQty(item.name, item.options[0].portion)}
+                                        currentQty={getItemQty(item.name, item.options[0].portion, item.category)}
                                         getQty={getItemQty}
                                         lang={lang}
                                     />
@@ -1933,6 +1709,8 @@ export default function RestaurantBillGenerator() {
                             onChangeQuantity={changeQuantity}
                             onPrintBill={printBill}
                             onClearBill={clearBill}
+                            isParcel={!!(selectedTable && parcels[selectedTable])}
+                            onToggleParcel={() => toggleParcel(selectedTable)}
                             lang={lang}
                         />
                     </>
@@ -1941,7 +1719,9 @@ export default function RestaurantBillGenerator() {
                     <AllTablesGrid
                         tables={tables}
                         bills={bills}
+                        parcels={parcels}
                         onTableClick={handleAllTablesTableClick}
+                        lang={lang}
                     />
                 )}
             </main>
@@ -1971,6 +1751,8 @@ export default function RestaurantBillGenerator() {
                     onClose={handleCloseDrawer}
                     onQuickAdd={handleQuickAddMore}
                     onShiftTable={() => setShowShiftModal(true)}
+                    isParcel={!!parcels[viewingTableFromAllTables || selectedTable]}
+                    onToggleParcel={() => toggleParcel(viewingTableFromAllTables || selectedTable)}
                     lang={lang}
                 />
             )}
@@ -1999,13 +1781,12 @@ export default function RestaurantBillGenerator() {
             )}
 
             {showMenuManager && (
-                <MenuManagerModal
+                <MenuManager
                     lang={lang}
-                    mergedMenu={managerMenuItems}
-                    categories={categories}
-                    menuSettings={menuSettings}
-                    onSaveSettings={handleSaveMenuSettings}
-                    onClose={() => setShowMenuManager(false)}
+                    items={menuItems}
+                    loadWarning={menuWarning}
+                    onItemsChange={setMenuItems}
+                    onClose={() => { setShowMenuManager(false); loadMenu(); }}
                 />
             )}
         </div>

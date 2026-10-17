@@ -13,14 +13,14 @@ export default function CustomerInsightsTab({ bills, loading }) {
   const [repeatPatterns, setRepeatPatterns] = useState([]);
 
   useEffect(() => {
-    if (bills.length > 0) {
-      calculateAvgItemsPerBill();
-      calculateOrderSizeDistribution();
-      calculatePeakDays();
-      calculateCategoryByTime();
-      calculateBillValueRanges();
-      calculateRepeatPatterns();
-    }
+    // always recalculate (even for an empty period) so stale numbers from the previous range never linger
+    calculateAvgItemsPerBill();
+    calculateOrderSizeDistribution();
+    calculatePeakDays();
+    calculateCategoryByTime();
+    calculateBillValueRanges();
+    calculateRepeatPatterns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bills]);
 
   const calculateAvgItemsPerBill = () => {
@@ -100,7 +100,7 @@ export default function CustomerInsightsTab({ bills, loading }) {
       if (!timeSlot) return;
 
       bill.items.forEach(item => {
-        const category = getCategoryForItem(item.name);
+        const category = item.category || 'Other';
         const key = `${timeSlot}-${category}`;
         
         if (!categoryData[key]) {
@@ -112,18 +112,6 @@ export default function CustomerInsightsTab({ bills, loading }) {
 
     const data = Object.values(categoryData);
     setCategoryByTime(data);
-  };
-
-  const getCategoryForItem = (itemName) => {
-    if (itemName.includes('Dabeli') || itemName.includes('Pav')) return 'Dabeli & Pavbhaji';
-    if (itemName.includes('Manchuri') || itemName.includes('Veg') || itemName.includes('Crispy')) return 'Manchurian';
-    if (itemName.includes('Rice')) return 'Rice';
-    if (itemName.includes('Noodles')) return 'Noodles';
-    if (itemName.includes('Paneer')) return 'Paneer';
-    if (itemName.includes('Soup')) return 'Soup';
-    if (itemName.includes('Drink') || itemName.includes('Water')) return 'Drinks';
-    if (itemName.includes('Ice-cream')) return 'Ice-cream';
-    return 'Other';
   };
 
   const calculateBillValueRanges = () => {
@@ -340,21 +328,21 @@ export default function CustomerInsightsTab({ bills, loading }) {
           title="Small Orders"
           subtitle="1-2 items"
           value={`${orderSizeDistribution[0]?.count || 0} orders`}
-          percentage={`${((orderSizeDistribution[0]?.count || 0) / bills.length * 100).toFixed(0)}%`}
+          percentage={`${((orderSizeDistribution[0]?.count || 0) / (bills.length || 1) * 100).toFixed(0)}%`}
           color="bg-blue-100 text-blue-600"
         />
         <InsightCard
           title="Medium Orders"
           subtitle="3-6 items"
           value={`${(orderSizeDistribution[1]?.count || 0) + (orderSizeDistribution[2]?.count || 0)} orders`}
-          percentage={`${(((orderSizeDistribution[1]?.count || 0) + (orderSizeDistribution[2]?.count || 0)) / bills.length * 100).toFixed(0)}%`}
+          percentage={`${(((orderSizeDistribution[1]?.count || 0) + (orderSizeDistribution[2]?.count || 0)) / (bills.length || 1) * 100).toFixed(0)}%`}
           color="bg-green-100 text-green-600"
         />
         <InsightCard
           title="Large Orders"
           subtitle="7+ items"
           value={`${(orderSizeDistribution[3]?.count || 0) + (orderSizeDistribution[4]?.count || 0)} orders`}
-          percentage={`${(((orderSizeDistribution[3]?.count || 0) + (orderSizeDistribution[4]?.count || 0)) / bills.length * 100).toFixed(0)}%`}
+          percentage={`${(((orderSizeDistribution[3]?.count || 0) + (orderSizeDistribution[4]?.count || 0)) / (bills.length || 1) * 100).toFixed(0)}%`}
           color="bg-orange-100 text-orange-600"
         />
       </div>

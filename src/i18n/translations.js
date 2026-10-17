@@ -64,6 +64,35 @@ export const UI_STRINGS = {
         confirmChangeBranch: 'Switch branch? You will see bills and menu for the newly selected branch.',
         savingChanges: 'Saving...',
         noFavoritesYet: 'No favorites yet — items ordered most often will show up here.',
+        parcel: 'Parcel',
+        parcelBadge: 'PARCEL',
+        menuSharedNote: 'The menu is shared by all branches. Changes apply everywhere.',
+        searchMenu: 'Search items...',
+        allCategories: 'All',
+        addItem: 'Add Item',
+        editItem: 'Edit Item',
+        itemPhoto: 'Photo',
+        addPhoto: 'Add photo',
+        changePhoto: 'Change photo',
+        removePhoto: 'Remove photo',
+        uploadingPhoto: 'Uploading photo...',
+        photoUploadFailed: 'Photo upload failed. Please try again.',
+        itemNameMr: 'Name in Marathi (optional)',
+        showOnMenu: 'Show on menu',
+        hiddenFromMenu: 'Hidden',
+        portionsAndPrices: 'Portions & prices',
+        portionName: 'Portion (e.g. Half)',
+        saveItem: 'Save Item',
+        saveFailed: 'Could not save. Please check your connection and try again.',
+        confirmDeleteItem: 'Delete this item from the menu? Past bills are not affected.',
+        menuLoadFailed: 'Could not load the menu. Showing the last saved copy.',
+        noMenuItems: 'No items found.',
+        newCategory: 'New category',
+        pickCategory: 'Category',
+        priceInvalid: 'Enter a valid price for every portion.',
+        onePhotoNote: 'Tip: a square photo works best.',
+        itemsCount: 'items',
+        ratePickerLabel: 'Price buttons only (no photo, like Ice-cream)',
         switchToMarathi: 'मराठी',
         switchToEnglish: 'English',
     },
@@ -124,6 +153,35 @@ export const UI_STRINGS = {
         confirmChangeBranch: 'शाखा बदलायची का? तुम्हाला नवीन निवडलेल्या शाखेची बिले आणि मेनू दिसेल.',
         savingChanges: 'सेव्ह होत आहे...',
         noFavoritesYet: 'अजून आवडते काहीच नाही — वारंवार मागवलेल्या वस्तू इथे दिसतील.',
+        parcel: 'पार्सल',
+        parcelBadge: 'पार्सल',
+        menuSharedNote: 'मेनू सर्व शाखांसाठी सारखाच आहे. बदल सर्वत्र लागू होतील.',
+        searchMenu: 'वस्तू शोधा...',
+        allCategories: 'सर्व',
+        addItem: 'वस्तू जोडा',
+        editItem: 'वस्तू बदला',
+        itemPhoto: 'फोटो',
+        addPhoto: 'फोटो जोडा',
+        changePhoto: 'फोटो बदला',
+        removePhoto: 'फोटो काढा',
+        uploadingPhoto: 'फोटो अपलोड होत आहे...',
+        photoUploadFailed: 'फोटो अपलोड झाला नाही. पुन्हा प्रयत्न करा.',
+        itemNameMr: 'मराठी नाव (ऐच्छिक)',
+        showOnMenu: 'मेनूमध्ये दाखवा',
+        hiddenFromMenu: 'लपवलेले',
+        portionsAndPrices: 'पोर्शन आणि किंमत',
+        portionName: 'पोर्शन (उदा. हाफ)',
+        saveItem: 'वस्तू सेव्ह करा',
+        saveFailed: 'सेव्ह झाले नाही. इंटरनेट तपासा आणि पुन्हा प्रयत्न करा.',
+        confirmDeleteItem: 'ही वस्तू मेनूमधून काढायची का? जुनी बिले बदलणार नाहीत.',
+        menuLoadFailed: 'मेनू लोड झाला नाही. शेवटची सेव्ह केलेली प्रत दाखवत आहे.',
+        noMenuItems: 'कोणतीही वस्तू सापडली नाही.',
+        newCategory: 'नवीन विभाग',
+        pickCategory: 'विभाग',
+        priceInvalid: 'प्रत्येक पोर्शनसाठी योग्य किंमत टाका.',
+        onePhotoNote: 'टीप: चौरस फोटो उत्तम दिसतो.',
+        itemsCount: 'वस्तू',
+        ratePickerLabel: 'फक्त किंमत बटणे (फोटो नाही, आईस्क्रीमसारखे)',
         switchToMarathi: 'मराठी',
         switchToEnglish: 'English',
     },
@@ -210,9 +268,16 @@ export function translateCategory(cat, lang) {
     return CATEGORY_MR[cat] || cat;
 }
 
+// Marathi names typed into the menu manager (menu_items.name_mr) are registered here
+// when the menu loads, so bills/receipts (which only store the English name) can show them.
+const DYNAMIC_NAME_MR = {};
+export function registerItemNamesMr(items) {
+    (items || []).forEach(i => { if (i.nameMr) DYNAMIC_NAME_MR[i.name] = i.nameMr; });
+}
+
 export function translateItemName(name, lang) {
     if (lang !== 'mr') return name;
-    return ITEM_NAME_MR[name] || name;
+    return DYNAMIC_NAME_MR[name] || ITEM_NAME_MR[name] || name;
 }
 
 export function translatePortion(portion, lang) {

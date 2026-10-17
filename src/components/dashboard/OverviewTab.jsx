@@ -1,284 +1,152 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, ShoppingBag, TrendingUp, Users, ArrowUp, ArrowDown } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { format, subDays } from 'date-fns';
+import { IndianRupee, ShoppingBag, TrendingUp, Package } from 'lucide-react';
+import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { summarize, pctChange, rangeLabel, inr, num, billTotal } from '../../lib/analytics';
+import { formatHour, formatDateKey, eachDateKey } from '../../lib/time';
+import { ChartCard, StatCard, LoadingBlock, compactMoney } from './shared';
 
-const COLORS = ['#ff7e47', '#4ade80', '#60a5fa', '#f59e0b', '#ec4899', '#8b5cf6'];
+export default function OverviewTab({ bills, prevBills, range, dateRange, loading }) {
+  const cur = useMemo(() => summarize(bills), [bills]);
+  const prev = useMemo(() => summarize(prevBills), [prevBills]);
+  const compareLabel = rangeLabel(dateRange, range);
 
-export default function OverviewTab({ bills, loading }) {
-  const [stats, setStats] = useState({
-    totalSales: 0,
-    billsCount: 0,
-    avgBill: 0,
-    itemsSold: 0,
-    comparisons: {
-      sales: 0,
-      bills: 0,
-      avg: 0,
-      items: 0
+  // Single day -> hour by hour. Longer range -> day by day (days with no sales show as 0).
+  const trend = useMemo(() => {
+    if (!range) return [];
+    if (range.days === 1) {
+      const hours = bills.map(b => b.hour_of_day);
+      if (hours.length === 0) return [];
+      const from = Math.min(...hours), to = Math.max(...hours);
+      const rows = Array.from({ length: to - from + 1 }, (_, i) => ({ label: formatHour(from + i), hour: from + i, sales: 0, orders: 0 }));
+      bills.forEach(b => { const r = rows[b.hour_of_day - from]; r.sales += billTotal(b); r.orders += 1; });
+      return rows;
     }
-  });
-  const [salesByHour, setSalesByHour] = useState([]);
-  const [salesByDay, setSalesByDay] = useState([]);
-  const [topItems, setTopItems] = useState([]);
-  const [categoryBreakdown, setCategoryBreakdown] = useState([]);
-  const [peakHours, setPeakHours] = useState([]);
+    const map = {};
+    eachDateKey(range.startKey, range.endKey).forEach(k => { map[k] = { label: formatDateKey(k, false), key: k, sales: 0, orders: 0 }; });
+    bills.forEach(b => { const r = map[b.date_ist]; if (r) { r.sales += billTotal(b); r.orders += 1; } });
+    return Object.values(map);
+  }, [bills, range]);
 
-  useEffect(() => {
-    if (bills.length > 0) {
-      calculateStats();
-      calculateSalesByHour();
-      calculateSalesByDay();
-      calculateTopItems();
-      calculateCategoryBreakdown();
-      calculatePeakHours();
-    }
+  const categories = useMemo(() => {
+    const m = {};
+    bills.forEach(b => b.items.forEach(i => {
+      m[i.category] = m[i.category] || { name: i.category, value: 0, qty: 0 };
+      m[i.category].value += i.price * i.qty;
+      m[i.category].qty += i.qty;
+    }));
+    const list = Object.values(m).sort((a, b) => b.value - a.value);
+    const total = list.reduce((s, c) => s + c.value, 0);
+    return list.map(c => ({ ...c, share: total ? (c.value / total) * 100 : 0 }));
   }, [bills]);
 
-  const calculateStats = () => {
-    const totalSales = bills.reduce((sum, bill) => sum + parseFloat(bill.total), 0);
-    const billsCount = bills.length;
-    const avgBill = billsCount > 0 ? totalSales / billsCount : 0;
-    const itemsSold = bills.reduce((sum, bill) => {
-      return sum + bill.items.reduce((itemSum, item) => itemSum + item.qty, 0);
-    }, 0);
-
-    // Calculate comparisons (vs yesterday for today view)
-    // This is simplified - you can make it more sophisticated
-    const comparisons = {
-      sales: 12, // +12% example
-      bills: 5,
-      avg: -3,
-      items: 8
-    };
-
-    setStats({ totalSales, billsCount, avgBill, itemsSold, comparisons });
-  };
-
-  const calculateSalesByHour = () => {
-    const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-      hour: `${i}:00`,
-      sales: 0
-    }));
-
-    bills.forEach(bill => {
-      const hour = bill.hour_of_day;
-      hourlyData[hour].sales += parseFloat(bill.total);
-    });
-
-    setSalesByHour(hourlyData.filter(h => h.sales > 0));
-  };
-
-  const calculateSalesByDay = () => {
-    const dayMap = {};
-    
-    bills.forEach(bill => {
-      const day = bill.day_of_week;
-      if (!dayMap[day]) {
-        dayMap[day] = { day, sales: 0 };
-      }
-      dayMap[day].sales += parseFloat(bill.total);
-    });
-
-    const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const sortedData = daysOrder.map(day => dayMap[day]).filter(Boolean);
-
-    setSalesByDay(sortedData);
-  };
-
-  const calculateTopItems = () => {
-    const itemMap = {};
-
-    bills.forEach(bill => {
-      bill.items.forEach(item => {
-        const key = `${item.name} (${item.portion})`;
-        if (!itemMap[key]) {
-          itemMap[key] = { name: key, quantity: 0 };
-        }
-        itemMap[key].quantity += item.qty;
-      });
-    });
-
-    const sorted = Object.values(itemMap).sort((a, b) => b.quantity - a.quantity);
-    setTopItems(sorted.slice(0, 10));
-  };
-
-  const calculateCategoryBreakdown = () => {
-    const categoryMap = {};
-
-    bills.forEach(bill => {
-      bill.items.forEach(item => {
-        const category = getCategoryForItem(item.name);
-        if (!categoryMap[category]) {
-          categoryMap[category] = { name: category, value: 0 };
-        }
-        categoryMap[category].value += item.price * item.qty;
-      });
-    });
-
-    setCategoryBreakdown(Object.values(categoryMap));
-  };
-
-  const getCategoryForItem = (itemName) => {
-    if (itemName.includes('Dabeli') || itemName.includes('Pav')) return 'Dabeli & Pavbhaji';
-    if (itemName.includes('Manchuri') || itemName.includes('Veg') || itemName.includes('Crispy')) return 'Manchurian';
-    if (itemName.includes('Rice')) return 'Rice';
-    if (itemName.includes('Noodles')) return 'Noodles';
-    if (itemName.includes('Paneer')) return 'Paneer';
-    if (itemName.includes('Soup')) return 'Soup';
-    if (itemName.includes('Drink') || itemName.includes('Water')) return 'Drinks';
-    if (itemName.includes('Ice-cream')) return 'Ice-cream';
-    return 'Other';
-  };
-
-  const calculatePeakHours = () => {
-    const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-      hour: `${i}:00`,
-      orders: 0
-    }));
-
-    bills.forEach(bill => {
-      hourlyData[bill.hour_of_day].orders += 1;
-    });
-
-    const sorted = hourlyData
-      .filter(h => h.orders > 0)
+  const peakHours = useMemo(() => {
+    const m = {};
+    bills.forEach(b => { m[b.hour_of_day] = (m[b.hour_of_day] || 0) + 1; });
+    return Object.entries(m)
+      .map(([h, orders]) => ({ hour: formatHour(Number(h)), orders }))
       .sort((a, b) => b.orders - a.orders)
       .slice(0, 5);
+  }, [bills]);
 
-    setPeakHours(sorted);
-  };
+  const topItems = useMemo(() => {
+    const m = {};
+    bills.forEach(b => b.items.forEach(i => {
+      const key = `${i.name}||${i.portion}||${i.category}`;
+      m[key] = m[key] || { name: i.name, portion: i.portion, quantity: 0, revenue: 0 };
+      m[key].quantity += i.qty;
+      m[key].revenue += i.price * i.qty;
+    }));
+    return Object.values(m).sort((a, b) => b.quantity - a.quantity).slice(0, 10);
+  }, [bills]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-xl text-gray-600">Loading overview...</div>
-      </div>
-    );
-  }
+  const parcelOrders = bills.filter(b => b.is_parcel).length;
+
+  if (loading) return <LoadingBlock label="Loading overview..." />;
 
   return (
     <div>
-      {/* Stats Cards with Sparklines */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard
-          icon={<DollarSign />}
-          title="Total Sales"
-          value={`₹${stats.totalSales.toFixed(2)}`}
-          change={stats.comparisons.sales}
-          color="bg-green-500"
-          delay={0}
-        />
-        <StatCard
-          icon={<ShoppingBag />}
-          title="Bills Count"
-          value={stats.billsCount}
-          change={stats.comparisons.bills}
-          color="bg-blue-500"
-          delay={0.1}
-        />
-        <StatCard
-          icon={<TrendingUp />}
-          title="Average Bill"
-          value={`₹${stats.avgBill.toFixed(2)}`}
-          change={stats.comparisons.avg}
-          color="bg-purple-500"
-          delay={0.2}
-        />
-        <StatCard
-          icon={<Users />}
-          title="Items Sold"
-          value={stats.itemsSold}
-          change={stats.comparisons.items}
-          color="bg-orange-500"
-          delay={0.3}
-        />
+        <StatCard icon={<IndianRupee />} title="Total Sales" value={inr(cur.sales)} change={pctChange(cur.sales, prev.sales)} compareLabel={compareLabel} color="bg-green-500" delay={0} />
+        <StatCard icon={<ShoppingBag />} title="Bills Count" value={num(cur.orders)} change={pctChange(cur.orders, prev.orders)} compareLabel={compareLabel} color="bg-blue-500" delay={0.05} />
+        <StatCard icon={<TrendingUp />} title="Average Bill" value={inr(cur.avg)} change={pctChange(cur.avg, prev.avg)} compareLabel={compareLabel} color="bg-purple-500" delay={0.1} />
+        <StatCard icon={<Package />} title="Items Sold" value={num(cur.items)} change={pctChange(cur.items, prev.items)} compareLabel={compareLabel} color="bg-orange-500" delay={0.15} />
       </div>
 
-      {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* <ChartCard title="Sales by Hour">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={salesByHour}>
+        <ChartCard
+          title={range?.days === 1 ? 'Sales by Hour' : 'Daily Sales'}
+          subtitle={range?.days === 1 ? 'Hour of day (IST)' : 'One bar per day'}
+          className="lg:col-span-2"
+        >
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={trend}>
+              <defs>
+                <linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#ff7e47" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#ff7e47" stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="hour" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="sales" stroke="#ff7e47" strokeWidth={2} />
-            </LineChart>
+              <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={24} />
+              <YAxis tickFormatter={compactMoney} width={56} />
+              <Tooltip formatter={(v, n) => (n === 'Sales' ? inr(v) : v)} />
+              <Area type="monotone" dataKey="sales" name="Sales" stroke="#ff7e47" strokeWidth={2} fill="url(#salesFill)" />
+            </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Revenue by Day of Week">
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={salesByDay}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="day" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="sales" fill="#4ade80" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard> */}
-
-        <ChartCard title="Category Breakdown">
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={categoryBreakdown}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={(entry) => `${entry.name}: ₹${entry.value.toFixed(0)}`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {categoryBreakdown.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+        <ChartCard title="Sales by Category" subtitle="Share of revenue">
+          <div className="space-y-3">
+            {categories.map((c, idx) => (
+              <div key={c.name}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-medium text-gray-800">{c.name}</span>
+                  <span className="text-gray-600">{inr(c.value)} · {c.share.toFixed(0)}%</span>
+                </div>
+                <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${c.share}%`, background: ['#ff7e47', '#4ade80', '#60a5fa', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6'][idx % 7] }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </ChartCard>
 
-        <ChartCard title="Peak Hours (Most Orders)">
-          <ResponsiveContainer width="100%" height={300}>
+        <ChartCard title="Peak Hours" subtitle="Top 5 hours by number of bills">
+          <ResponsiveContainer width="100%" height={260}>
             <BarChart data={peakHours}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="hour" />
-              <YAxis />
+              <YAxis allowDecimals={false} />
               <Tooltip />
-              <Legend />
-              <Bar dataKey="orders" fill="#f59e0b" />
+              <Bar dataKey="orders" name="Bills" fill="#f59e0b" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
       </div>
 
-      {/* Top Items Table */}
       <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Top Selling Items</h3>
-        <div className="space-y-3">
+        <div className="flex items-baseline justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-900">Top Selling Items</h3>
+          <span className="text-sm text-gray-500">{parcelOrders > 0 && `${parcelOrders} parcel bill${parcelOrders === 1 ? '' : 's'} included`}</span>
+        </div>
+        <div className="space-y-1">
           {topItems.map((item, index) => (
             <motion.div
-              key={index}
+              key={`${item.name}-${item.portion}-${index}`}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
+              transition={{ duration: 0.3, delay: index * 0.04 }}
               className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl font-bold text-gray-300">#{index + 1}</span>
-                <div>
-                  <p className="font-medium text-gray-900 text-sm">{item.name}</p>
-                </div>
+                <span className="text-2xl font-bold text-gray-300 w-10">#{index + 1}</span>
+                <p className="font-medium text-gray-900 text-sm">{item.name} <span className="text-gray-400">({item.portion})</span></p>
               </div>
-              <span className="font-bold text-orange-600">{item.quantity}x</span>
+              <div className="text-right">
+                <span className="font-bold text-orange-600">{num(item.quantity)}x</span>
+                <span className="block text-xs text-gray-400">{inr(item.revenue)}</span>
+              </div>
             </motion.div>
           ))}
         </div>
@@ -286,49 +154,3 @@ export default function OverviewTab({ bills, loading }) {
     </div>
   );
 }
-
-// Stat Card with Comparison
-const StatCard = ({ icon, title, value, change, color, delay }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5, delay }}
-    className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
-  >
-    <div className="flex items-center justify-between mb-3">
-      <div className={`${color} p-3 rounded-lg text-white`}>
-        {icon}
-      </div>
-      {change !== 0 && (
-        <div className={`flex items-center gap-1 text-sm font-medium ${
-          change > 0 ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {change > 0 ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
-          {Math.abs(change)}%
-        </div>
-      )}
-    </div>
-    <p className="text-sm text-gray-600 mb-1">{title}</p>
-    <motion.p
-      initial={{ scale: 0 }}
-      animate={{ scale: 1 }}
-      transition={{ duration: 0.5, delay: delay + 0.2 }}
-      className="text-2xl font-bold text-gray-900"
-    >
-      {value}
-    </motion.p>
-  </motion.div>
-);
-
-// Chart Card Component
-const ChartCard = ({ title, children }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.95 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5 }}
-    className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
-  >
-    <h3 className="text-lg font-bold text-gray-900 mb-4">{title}</h3>
-    {children}
-  </motion.div>
-);

@@ -1,325 +1,352 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, subMonths } from 'date-fns';
-import CalendarHeatmap from 'react-calendar-heatmap';
-import 'react-calendar-heatmap/dist/styles.css';
+import React, { useMemo, useState } from 'react';
+import { BarChart, Bar, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { billTotal, inr, num } from '../../lib/analytics';
+import { WEEKDAYS_MON_FIRST, formatHour, formatDateKey, eachDateKey, weekdayOfKey, addDaysToKey } from '../../lib/time';
+import { ChartCard, InsightCard, LoadingBlock, compactMoney } from './shared';
 
-export default function TimeAnalyticsTab({ bills, loading }) {
-  const [salesVelocity, setSalesVelocity] = useState([]);
-  const [monthOverMonth, setMonthOverMonth] = useState([]);
-  const [weekOverWeek, setWeekOverWeek] = useState([]);
-  const [heatmapData, setHeatmapData] = useState([]);
-  const [busySlots, setBusySlots] = useState([]);
-  const [hourlyVelocity, setHourlyVelocity] = useState([]);
+const weekStartKey = (key) => addDaysToKey(key, -WEEKDAYS_MON_FIRST.indexOf(weekdayOfKey(key)));
 
-  useEffect(() => {
-    if (bills.length > 0) {
-      calculateSalesVelocity();
-      calculateMonthOverMonth();
-      calculateWeekOverWeek();
-      calculateHeatmapData();
-      calculateBusySlots();
-      calculateHourlyVelocity();
-    }
-  }, [bills]);
+// consecutive hours -> "7 PM – 10 PM"
+function toWindows(hours) {
+  const sorted = [...hours].sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach(h => {
+    const last = out[out.length - 1];
+    if (last && h === last.end + 1) last.end = h; else out.push({ start: h, end: h });
+  });
+  return out.map(w => `${formatHour(w.start)} – ${formatHour((w.end + 1) % 24)}`);
+}
 
-  const calculateSalesVelocity = () => {
-    // Orders per hour during different time periods
-    const rushHours = [12, 13, 19, 20, 21]; // Lunch and dinner
-    const normalHours = [10, 11, 14, 15, 16, 17, 18];
-    
-    const velocityData = [];
-    
-    [...rushHours, ...normalHours].forEach(hour => {
-      const hourBills = bills.filter(b => b.hour_of_day === hour);
-      const ordersPerMinute = hourBills.length > 0 ? (hourBills.length / 60).toFixed(2) : 0;
-      
-      velocityData.push({
-        hour: `${hour}:00`,
-        ordersPerHour: hourBills.length,
-        ordersPerMinute: parseFloat(ordersPerMinute),
-        type: rushHours.includes(hour) ? 'Rush' : 'Normal'
-      });
+const MetricToggle = ({ metric, setMetric }) => (
+  <div className="flex gap-2 mb-3">
+    {[['orders', 'Bills'], ['sales', 'Sales']].map(([k, label]) => (
+      <button
+        key={k}
+        onClick={() => setMetric(k)}
+        className={`px-3 py-1.5 rounded-full text-sm font-medium ${metric === k ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+      >
+        {label}
+      </button>
+    ))}
+  </div>
+);
+
+export default function TimeAnalyticsTab({ bills, range, loading }) {
+  const [metric, setMetric] = useState('orders'); // 'orders' | 'sales'
+
+  const data = useMemo(() => {
+    if (!range || bills.length === 0) return null;
+
+    // ---- per day (days with no sales are kept as zeros so the trend has no gaps) ----
+    const dayMap = {};
+    eachDateKey(range.startKey, range.endKey).forEach(k => {
+      dayMap[k] = { key: k, label: formatDateKey(k, false), weekday: weekdayOfKey(k), sales: 0, orders: 0 };
+    });
+    bills.forEach(b => {
+      const d = dayMap[b.date_ist];
+      if (d) { d.sales += billTotal(b); d.orders += 1; }
+    });
+    const days = Object.values(dayMap);
+    const openDays = days.filter(d => d.orders > 0);
+    const nOpen = openDays.length || 1; // averages are per day that actually had sales
+
+    // ---- per hour ----
+    const hourRows = Array.from({ length: 24 }, (_, h) => ({ hour: h, label: formatHour(h), orders: 0, sales: 0 }));
+    bills.forEach(b => { const r = hourRows[b.hour_of_day]; r.orders += 1; r.sales += billTotal(b); });
+    const activeHours = hourRows.filter(h => h.orders > 0);
+    const hMin = activeHours[0].hour;
+    const hMax = activeHours[activeHours.length - 1].hour;
+    const hourProfile = hourRows.slice(hMin, hMax + 1).map(h => ({
+      ...h,
+      avgOrders: +(h.orders / nOpen).toFixed(1),
+      avgSales: Math.round(h.sales / nOpen),
+    }));
+
+    // ---- per weekday (average per day that had sales: 5 Saturdays vs 4 Mondays stays fair) ----
+    const weekdayProfile = WEEKDAYS_MON_FIRST.map(w => {
+      const ds = openDays.filter(d => d.weekday === w);
+      const sales = ds.reduce((s, d) => s + d.sales, 0);
+      const orders = ds.reduce((s, d) => s + d.orders, 0);
+      return {
+        weekday: w,
+        short: w.slice(0, 3),
+        days: ds.length,
+        sales,
+        orders,
+        avgSales: ds.length ? Math.round(sales / ds.length) : 0,
+        avgOrders: ds.length ? +(orders / ds.length).toFixed(1) : 0,
+      };
     });
 
-    setSalesVelocity(velocityData.sort((a, b) => parseInt(a.hour) - parseInt(b.hour)));
-  };
-
-  const calculateMonthOverMonth = () => {
-    // Group bills by month
-    const monthMap = {};
-    
-    bills.forEach(bill => {
-      const month = format(new Date(bill.completed_at), 'MMM yyyy');
-      if (!monthMap[month]) {
-        monthMap[month] = { month, sales: 0, orders: 0 };
-      }
-      monthMap[month].sales += parseFloat(bill.total);
-      monthMap[month].orders += 1;
+    // ---- weekday x hour grid ----
+    const grid = {};
+    let gridMaxOrders = 0;
+    let gridMaxSales = 0;
+    bills.forEach(b => {
+      const key = `${b.day_of_week}-${b.hour_of_day}`;
+      const c = (grid[key] = grid[key] || { orders: 0, sales: 0 });
+      c.orders += 1;
+      c.sales += billTotal(b);
+      gridMaxOrders = Math.max(gridMaxOrders, c.orders);
+      gridMaxSales = Math.max(gridMaxSales, c.sales);
     });
+    const topSlots = Object.entries(grid)
+      .map(([k, v]) => { const [w, h] = k.split('-'); return { weekday: w, hour: Number(h), ...v }; })
+      .sort((a, b) => b.orders - a.orders || b.sales - a.sales)
+      .slice(0, 3);
 
-    const data = Object.values(monthMap).sort((a, b) => 
-      new Date(a.month) - new Date(b.month)
-    );
+    // ---- rush / quiet windows (relative to this period's own peak hour) ----
+    const peak = Math.max(...hourProfile.map(h => h.orders));
+    const rush = hourProfile.filter(h => h.orders >= peak * 0.7).map(h => h.hour);
+    const quiet = hourProfile.filter(h => h.orders <= peak * 0.3).map(h => h.hour);
 
-    setMonthOverMonth(data);
-  };
-
-  const calculateWeekOverWeek = () => {
-    // Group by week
+    // ---- per week (shown only for 2+ weeks) ----
     const weekMap = {};
-    
-    bills.forEach(bill => {
-      const date = new Date(bill.completed_at);
-      const weekStart = new Date(date);
-      weekStart.setDate(date.getDate() - date.getDay());
-      const weekLabel = format(weekStart, 'MMM dd');
-      
-      if (!weekMap[weekLabel]) {
-        weekMap[weekLabel] = { week: weekLabel, sales: 0, orders: 0 };
-      }
-      weekMap[weekLabel].sales += parseFloat(bill.total);
-      weekMap[weekLabel].orders += 1;
+    days.forEach(d => {
+      const k = weekStartKey(d.key);
+      weekMap[k] = weekMap[k] || { key: k, label: `Wk ${formatDateKey(k, false)}`, sales: 0, orders: 0 };
+      weekMap[k].sales += d.sales;
+      weekMap[k].orders += d.orders;
     });
+    const weeks = Object.values(weekMap);
 
-    const data = Object.values(weekMap);
-    setWeekOverWeek(data);
-  };
+    const withSales = weekdayProfile.filter(w => w.days > 0);
+    const totalSales = bills.reduce((s, b) => s + billTotal(b), 0);
 
-  const calculateHeatmapData = () => {
-    // Create heatmap data for last 90 days
-    const dateMap = {};
-    
-    bills.forEach(bill => {
-      const date = format(new Date(bill.completed_at), 'yyyy-MM-dd');
-      if (!dateMap[date]) {
-        dateMap[date] = 0;
-      }
-      dateMap[date] += parseFloat(bill.total);
-    });
+    return {
+      days, nOpen, hourProfile, weekdayProfile, grid, gridMaxOrders, gridMaxSales, topSlots,
+      rush, quiet, weeks, hMin, hMax,
+      bestDay: [...openDays].sort((a, b) => b.sales - a.sales)[0],
+      bestWeekday: [...withSales].sort((a, b) => b.avgSales - a.avgSales)[0],
+      slowWeekday: [...withSales].sort((a, b) => a.avgSales - b.avgSales)[0],
+      avgSalesPerDay: totalSales / nOpen,
+      avgOrdersPerDay: bills.length / nOpen,
+      avgBill: totalSales / bills.length,
+      busiestHour: [...hourProfile].sort((a, b) => b.orders - a.orders)[0],
+    };
+  }, [bills, range]);
 
-    const heatData = Object.entries(dateMap).map(([date, count]) => ({
-      date,
-      count: Math.round(count)
-    }));
+  if (loading) return <LoadingBlock label="Loading time analytics..." />;
+  if (!data) return null;
 
-    setHeatmapData(heatData);
-  };
+  const {
+    days, nOpen, hourProfile, weekdayProfile, grid, gridMaxOrders, gridMaxSales, topSlots,
+    rush, quiet, weeks, bestDay, bestWeekday, slowWeekday, hMin, hMax,
+    avgSalesPerDay, avgOrdersPerDay, avgBill, busiestHour,
+  } = data;
 
-  const calculateBusySlots = () => {
-    // Hour x Day matrix
-    const matrix = {};
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    
-    bills.forEach(bill => {
-      const day = bill.day_of_week;
-      const hour = bill.hour_of_day;
-      const key = `${day}-${hour}`;
-      
-      if (!matrix[key]) {
-        matrix[key] = { day, hour, orders: 0 };
-      }
-      matrix[key].orders += 1;
-    });
-
-    const data = Object.values(matrix);
-    setBusySlots(data);
-  };
-
-  const calculateHourlyVelocity = () => {
-    const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-      hour: `${i}:00`,
-      orders: 0,
-      revenue: 0
-    }));
-
-    bills.forEach(bill => {
-      const hour = bill.hour_of_day;
-      hourlyData[hour].orders += 1;
-      hourlyData[hour].revenue += parseFloat(bill.total);
-    });
-
-    setHourlyVelocity(hourlyData.filter(h => h.orders > 0));
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-xl text-gray-600">Loading time analytics...</div>
-      </div>
-    );
-  }
+  const isSingleDay = range.days === 1;
+  const hoursShown = Array.from({ length: hMax - hMin + 1 }, (_, i) => hMin + i);
+  const gridMax = metric === 'orders' ? gridMaxOrders : gridMaxSales;
+  const hourKey = isSingleDay ? metric : metric === 'orders' ? 'avgOrders' : 'avgSales';
 
   return (
     <div className="space-y-6">
-      {/* Sales Velocity */}
-      <ChartCard title="⚡ Sales Velocity (Orders per Hour)">
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={salesVelocity}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="hour" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="ordersPerHour" fill="#ff7e47" name="Orders/Hour" />
-          </BarChart>
-        </ResponsiveContainer>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600">Peak Velocity</p>
-            <p className="text-2xl font-bold text-orange-600">
-              {Math.max(...salesVelocity.map(s => s.ordersPerHour))} orders/hr
-            </p>
-          </div>
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600">Average Velocity</p>
-            <p className="text-2xl font-bold text-blue-600">
-              {(salesVelocity.reduce((sum, s) => sum + s.ordersPerHour, 0) / salesVelocity.length).toFixed(1)} orders/hr
-            </p>
-          </div>
-        </div>
-      </ChartCard>
+      {/* Headline numbers */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <InsightCard
+          icon="🔥" title="Busiest hour" color="bg-red-500"
+          value={formatHour(busiestHour.hour)}
+          subtitle={isSingleDay ? `${busiestHour.orders} bills` : `${busiestHour.avgOrders} bills per day on average`}
+        />
+        <InsightCard
+          icon="📅" color="bg-green-500"
+          title={isSingleDay ? 'Average bill' : 'Strongest weekday'}
+          value={isSingleDay ? inr(avgBill) : bestWeekday?.weekday || '—'}
+          subtitle={isSingleDay ? `${num(avgOrdersPerDay)} bills` : `${inr(bestWeekday?.avgSales)} per day on average`}
+        />
+        <InsightCard
+          icon="💰" color="bg-orange-500"
+          title={isSingleDay ? 'Sales' : 'Best day in period'}
+          value={isSingleDay ? inr(avgSalesPerDay) : bestDay ? formatDateKey(bestDay.key) : '—'}
+          subtitle={isSingleDay ? '' : bestDay ? `${inr(bestDay.sales)} · ${bestDay.orders} bills` : ''}
+        />
+        <InsightCard
+          icon="📈" title="Average open day" color="bg-blue-500"
+          value={inr(avgSalesPerDay)}
+          subtitle={`${num(avgOrdersPerDay)} bills · ${nOpen} day${nOpen === 1 ? '' : 's'} with sales`}
+        />
+      </div>
 
-      {/* Month over Month */}
-      <ChartCard title="📈 Month-over-Month Growth">
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={monthOverMonth}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Area type="monotone" dataKey="sales" stroke="#4ade80" fill="#4ade8050" name="Sales (₹)" />
-            <Area type="monotone" dataKey="orders" stroke="#60a5fa" fill="#60a5fa50" name="Orders" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Week over Week */}
-      <ChartCard title="📊 Week-over-Week Comparison">
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={weekOverWeek}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="week" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="sales" stroke="#ff7e47" strokeWidth={2} name="Sales (₹)" />
-            <Line type="monotone" dataKey="orders" stroke="#8b5cf6" strokeWidth={2} name="Orders" />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Hourly Revenue & Orders */}
-      <ChartCard title="⏰ Hourly Performance">
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={hourlyVelocity}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="hour" />
-            <YAxis yAxisId="left" />
-            <YAxis yAxisId="right" orientation="right" />
-            <Tooltip />
-            <Legend />
-            <Bar yAxisId="left" dataKey="revenue" fill="#4ade80" name="Revenue (₹)" />
-            <Bar yAxisId="right" dataKey="orders" fill="#f59e0b" name="Orders" />
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Heat Map Calendar */}
+      {/* Staffing guide */}
       <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">🔥 Sales Heat Map (Last 90 Days)</h3>
-        <div className="overflow-x-auto">
-          <CalendarHeatmap
-            startDate={subDays(new Date(), 90)}
-            endDate={new Date()}
-            values={heatmapData}
-            classForValue={(value) => {
-              if (!value || value.count === 0) return 'color-empty';
-              if (value.count < 1000) return 'color-scale-1';
-              if (value.count < 3000) return 'color-scale-2';
-              if (value.count < 5000) return 'color-scale-3';
-              return 'color-scale-4';
-            }}
-            tooltipDataAttrs={(value) => {
-              return {
-                'data-tip': value.date
-                  ? `${format(new Date(value.date), 'MMM dd, yyyy')}: ₹${value.count}`
-                  : 'No data'
-              };
-            }}
-          />
+        <h3 className="text-lg font-bold text-gray-900 mb-1">Rush &amp; quiet windows</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Rush = hours with at least 70% of your busiest hour's bills. Quiet = 30% or less. Based on this period only.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-lg bg-red-50 border border-red-100 p-4">
+            <p className="text-sm font-semibold text-red-700 mb-1">Rush</p>
+            <p className="text-gray-900 font-bold">{toWindows(rush).join(', ') || '—'}</p>
+            <p className="text-xs text-gray-500 mt-1">Have everyone in and prep done before this.</p>
+          </div>
+          <div className="rounded-lg bg-blue-50 border border-blue-100 p-4">
+            <p className="text-sm font-semibold text-blue-700 mb-1">Quiet</p>
+            <p className="text-gray-900 font-bold">{toWindows(quiet).join(', ') || 'No clearly quiet hours'}</p>
+            <p className="text-xs text-gray-500 mt-1">Good time for breaks, restocking, cleaning.</p>
+          </div>
+          <div className="rounded-lg bg-orange-50 border border-orange-100 p-4">
+            <p className="text-sm font-semibold text-orange-700 mb-1">{isSingleDay ? 'Top hours' : 'Hottest weekday + hour slots'}</p>
+            <ul className="text-gray-900 text-sm space-y-0.5">
+              {topSlots.map(s => (
+                <li key={`${s.weekday}-${s.hour}`} className="font-semibold">
+                  {isSingleDay ? '' : `${s.weekday.slice(0, 3)} `}{formatHour(s.hour)}
+                  <span className="font-normal text-gray-500"> · {s.orders} bills · {inr(s.sales)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
-        <style jsx>{`
-          .color-empty { fill: #ebedf0; }
-          .color-scale-1 { fill: #c6e48b; }
-          .color-scale-2 { fill: #7bc96f; }
-          .color-scale-3 { fill: #239a3b; }
-          .color-scale-4 { fill: #196127; }
-        `}</style>
       </div>
 
-      {/* Best Performing Times */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatBox
-          title="🌅 Best Morning Hour"
-          value={getBestHour(hourlyVelocity, [6, 7, 8, 9, 10, 11])}
-          color="bg-yellow-500"
-        />
-        <StatBox
-          title="☀️ Best Afternoon Hour"
-          value={getBestHour(hourlyVelocity, [12, 13, 14, 15, 16, 17])}
-          color="bg-orange-500"
-        />
-        <StatBox
-          title="🌙 Best Evening Hour"
-          value={getBestHour(hourlyVelocity, [18, 19, 20, 21, 22])}
-          color="bg-purple-500"
-        />
-      </div>
+      {/* Daily trend */}
+      {!isSingleDay && (
+        <ChartCard title="Daily trend" subtitle="Sales (bars) and number of bills (line). Dashed line = average open day.">
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={days}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={24} />
+              <YAxis yAxisId="left" tickFormatter={compactMoney} width={56} />
+              <YAxis yAxisId="right" orientation="right" allowDecimals={false} width={36} />
+              <Tooltip formatter={(v, n) => (n === 'Sales' ? inr(v) : v)} />
+              <Legend />
+              <ReferenceLine yAxisId="left" y={avgSalesPerDay} stroke="#9ca3af" strokeDasharray="5 5" />
+              <Bar yAxisId="left" dataKey="sales" name="Sales" fill="#4ade80" radius={[3, 3, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="orders" name="Bills" stroke="#6366f1" strokeWidth={2} dot={days.length <= 31} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      )}
+
+      {/* Hour profile */}
+      <ChartCard
+        title={isSingleDay ? 'Hour by hour' : 'A typical day, hour by hour'}
+        subtitle={isSingleDay ? 'Per hour (IST)' : `Average per day that had sales (${nOpen} day${nOpen === 1 ? '' : 's'}), IST`}
+      >
+        <MetricToggle metric={metric} setMetric={setMetric} />
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={hourProfile}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="label" />
+            <YAxis tickFormatter={metric === 'sales' ? compactMoney : undefined} width={metric === 'sales' ? 56 : 40} />
+            <Tooltip formatter={(v) => (metric === 'sales' ? inr(v) : v)} />
+            <Bar dataKey={hourKey} name={metric === 'orders' ? 'Bills' : 'Sales'} radius={[4, 4, 0, 0]}>
+              {hourProfile.map(h => (
+                <Cell key={h.hour} fill={rush.includes(h.hour) ? '#ef4444' : quiet.includes(h.hour) ? '#93c5fd' : '#ff7e47'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <p className="text-xs text-gray-400 mt-2">Red = rush hours, light blue = quiet hours.</p>
+      </ChartCard>
+
+      {/* Weekday profile */}
+      {!isSingleDay && (
+        <ChartCard
+          title="Which weekdays earn most"
+          subtitle="Average sales per day that had sales, so a month with five Saturdays doesn't unfairly beat one with four."
+        >
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={weekdayProfile}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="short" />
+              <YAxis tickFormatter={compactMoney} width={56} />
+              <Tooltip formatter={(v) => inr(v)} labelFormatter={(l, p) => p?.[0]?.payload?.weekday || l} />
+              <Bar dataKey="avgSales" name="Avg sales / day" radius={[4, 4, 0, 0]}>
+                {weekdayProfile.map(w => (
+                  <Cell
+                    key={w.weekday}
+                    fill={w.weekday === bestWeekday?.weekday ? '#16a34a'
+                      : w.weekday === slowWeekday?.weekday && bestWeekday?.weekday !== slowWeekday?.weekday ? '#93c5fd'
+                        : '#4ade80'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-gray-500 border-b">
+                  <th className="text-left py-2 font-medium">Weekday</th>
+                  <th className="text-right py-2 font-medium">Days</th>
+                  <th className="text-right py-2 font-medium">Total sales</th>
+                  <th className="text-right py-2 font-medium">Avg sales/day</th>
+                  <th className="text-right py-2 font-medium">Avg bills/day</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekdayProfile.map(w => (
+                  <tr key={w.weekday} className="border-b border-gray-100">
+                    <td className="py-2 font-medium text-gray-800">{w.weekday}</td>
+                    <td className="py-2 text-right text-gray-600">{w.days}</td>
+                    <td className="py-2 text-right text-gray-600">{inr(w.sales)}</td>
+                    <td className="py-2 text-right font-semibold text-green-700">{w.days ? inr(w.avgSales) : '—'}</td>
+                    <td className="py-2 text-right text-gray-600">{w.days ? w.avgOrders : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ChartCard>
+      )}
+
+      {/* Weekday x hour heat grid */}
+      {!isSingleDay && (
+        <ChartCard title="Busy-slot heat map" subtitle="Every weekday and hour in the period. Darker = busier.">
+          <MetricToggle metric={metric} setMetric={setMetric} />
+          <div className="overflow-x-auto">
+            <table className="border-separate border-spacing-1 text-xs">
+              <thead>
+                <tr>
+                  <th />
+                  {hoursShown.map(h => <th key={h} className="font-medium text-gray-500 px-1 min-w-10">{formatHour(h)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {WEEKDAYS_MON_FIRST.map(w => (
+                  <tr key={w}>
+                    <td className="pr-2 font-medium text-gray-600 whitespace-nowrap">{w.slice(0, 3)}</td>
+                    {hoursShown.map(h => {
+                      const cell = grid[`${w}-${h}`];
+                      const v = cell ? cell[metric] : 0;
+                      const alpha = v && gridMax ? 0.12 + 0.88 * (v / gridMax) : 0;
+                      return (
+                        <td
+                          key={h}
+                          title={cell ? `${w} ${formatHour(h)}: ${cell.orders} bills, ${inr(cell.sales)}` : `${w} ${formatHour(h)}: no bills`}
+                          className="h-9 min-w-10 text-center rounded"
+                          style={{ background: v ? `rgba(255,126,71,${alpha})` : '#f3f4f6', color: alpha > 0.55 ? '#fff' : '#374151' }}
+                        >
+                          {v ? (metric === 'orders' ? v : compactMoney(Math.round(v))) : ''}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ChartCard>
+      )}
+
+      {/* Weekly trend: only when there are at least 2 weeks to compare */}
+      {weeks.length >= 2 && (
+        <ChartCard title="Week by week" subtitle="Weeks start on Monday. The first and last week may be partial.">
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={weeks}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" />
+              <YAxis yAxisId="left" tickFormatter={compactMoney} width={56} />
+              <YAxis yAxisId="right" orientation="right" allowDecimals={false} width={36} />
+              <Tooltip formatter={(v, n) => (n === 'Sales' ? inr(v) : v)} />
+              <Legend />
+              <Line yAxisId="left" type="monotone" dataKey="sales" name="Sales" stroke="#ff7e47" strokeWidth={2} />
+              <Line yAxisId="right" type="monotone" dataKey="orders" name="Bills" stroke="#8b5cf6" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      )}
     </div>
   );
 }
-
-const getBestHour = (data, hours) => {
-  const filtered = data.filter(d => {
-    const hour = parseInt(d.hour);
-    return hours.includes(hour);
-  });
-  
-  if (filtered.length === 0) return 'N/A';
-  
-  const best = filtered.reduce((max, curr) => 
-    curr.revenue > max.revenue ? curr : max
-  );
-  
-  return `${best.hour} (₹${best.revenue.toFixed(0)})`;
-};
-
-const ChartCard = ({ title, children }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5 }}
-    className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
-  >
-    <h3 className="text-lg font-bold text-gray-900 mb-4">{title}</h3>
-    {children}
-  </motion.div>
-);
-
-const StatBox = ({ title, value, color }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.9 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5 }}
-    className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
-  >
-    <div className={`${color} w-12 h-12 rounded-lg flex items-center justify-center text-white text-2xl mb-3`}>
-      ⏰
-    </div>
-    <p className="text-sm text-gray-600 mb-1">{title}</p>
-    <p className="text-xl font-bold text-gray-900">{value}</p>
-  </motion.div>
-);
