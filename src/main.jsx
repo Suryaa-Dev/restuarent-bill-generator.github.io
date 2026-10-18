@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import OrderHistory from './pages/OrderHistory.jsx';
+import KitchenDisplay from './pages/KitchenDisplay.jsx';
 import './index.css';
 
 // Register service worker
@@ -27,6 +28,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/" element={<App />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/history" element={<OrderHistory />} />
+        <Route path="/kds" element={<KitchenDisplay />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

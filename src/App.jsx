@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag } from 'lucide-react';
+import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay } from 'lucide-react';
 import { supabase } from './config/supabase';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
 import {
@@ -15,6 +15,26 @@ import {
 import { fetchMenuItems, getCategories } from './lib/menu';
 import { toISTParts } from './lib/time';
 import MenuManager from './components/menu/MenuManager';
+import KitchenManager from './components/kitchen/KitchenManager';
+import TokensPanel, { CancelTokenModal } from './components/kitchen/TokensPanel';
+import UpdateTokenModal from './components/kitchen/UpdateTokenModal';
+import {
+    getSavedMode,
+    saveMode,
+    hasUsedKitchenMode,
+    lineKey,
+    fetchKitchens,
+    buildKitchenLookup,
+    fetchActiveTokens,
+    normalizeToken,
+    createToken,
+    patchToken,
+    setParcelOnTokens,
+    archiveTokens,
+    moveTokens,
+    analyzeBill,
+    countPendingServe,
+} from './lib/kitchen';
 
 
 /* ---------------- Header ---------------- */
@@ -243,10 +263,17 @@ const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
 /* ---------------- Cart Drawer (Mobile) ---------------- */
 
 // bottom drawer for current table bill
-const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, lang }) => {
+// `kitchen` is null in Normal mode (UI stays exactly as before). In Kitchen System mode it
+// carries the token data/handlers and adds: a 4th "Tokens" tab-switch button and a
+// [Clear Bill] [Send Token] [Print Bill] footer.
+const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, kitchen, lang }) => {
+    const [view, setView] = useState('bill'); // 'bill' | 'tokens'
+    const showTokens = !!kitchen && view === 'tokens';
+    const canSend = !!kitchen && kitchen.unsentCount > 0 && !kitchen.sending && !!selectedTable;
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
-            <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col">
+            <div className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] flex flex-col ${kitchen ? 'h-[85vh]' : ''}`}>
                 {/* Title + close kept on their own row, away from the action buttons
                     below, so closing the drawer is never at risk of a mis-tap. */}
                 <div className="flex justify-between items-center px-4 pt-4 pb-2 sticky top-0 bg-white z-10">
@@ -258,120 +285,172 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                     </button>
                 </div>
 
-                {/* Action row: add more items / shift table / parcel. Parcel is a toggle:
-                    white while off, purple once this order is marked as a parcel. */}
+                {/* Action row: add more items / shift table / parcel / (kitchen mode) tokens.
+                    Parcel is a toggle: white while off, purple once this order is marked as a parcel.
+                    Tokens is a tab switch: it swaps the bill list for the token cards. */}
                 <div className="flex items-stretch gap-2 px-4 pb-3 border-b sticky top-[52px] bg-white z-10">
                     <button
                         onClick={onQuickAdd}
-                        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-green-50 text-green-700 active:bg-green-100"
+                        className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-green-50 text-green-700 active:bg-green-100"
                     >
                         <ListPlus size={18} />
-                        <span className="text-[10px] font-semibold leading-tight">{t('addMore', lang)}</span>
+                        <span className="text-[10px] font-semibold leading-tight text-center">{t('addMore', lang)}</span>
                     </button>
 
                     <button
                         onClick={onShiftTable}
-                        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-blue-50 text-blue-700 active:bg-blue-100"
+                        className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl bg-blue-50 text-blue-700 active:bg-blue-100"
                     >
                         <ArrowRightLeft size={18} />
-                        <span className="text-[10px] font-semibold leading-tight">{t('shiftTable', lang)}</span>
+                        <span className="text-[10px] font-semibold leading-tight text-center">{t('shiftTable', lang)}</span>
                     </button>
 
                     <button
                         onClick={onToggleParcel}
                         disabled={currentBill.length === 0}
                         aria-pressed={!!isParcel}
-                        className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl border transition-colors disabled:opacity-40 ${isParcel
+                        className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl border transition-colors disabled:opacity-40 ${isParcel
                             ? 'bg-purple-600 text-white border-purple-600 active:bg-purple-700'
                             : 'bg-white text-gray-700 border-gray-300 active:bg-gray-100'
                             }`}
                     >
                         <ShoppingBag size={18} />
-                        <span className="text-[10px] font-semibold leading-tight">{t('parcel', lang)}</span>
+                        <span className="text-[10px] font-semibold leading-tight text-center">{t('parcel', lang)}</span>
                     </button>
+
+                    {kitchen && (
+                        <button
+                            onClick={() => setView(v => (v === 'tokens' ? 'bill' : 'tokens'))}
+                            aria-pressed={showTokens}
+                            className={`relative flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl border transition-colors ${showTokens
+                                ? 'bg-indigo-600 text-white border-indigo-600 active:bg-indigo-700'
+                                : 'bg-indigo-50 text-indigo-700 border-indigo-100 active:bg-indigo-100'
+                                }`}
+                        >
+                            <ClipboardList size={18} />
+                            <span className="text-[10px] font-semibold leading-tight text-center">{t('tokens', lang)}</span>
+                            {kitchen.pendingServe > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 bg-orange-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
+                                    {kitchen.pendingServe}
+                                </span>
+                            )}
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4">
-                    {currentBill.length === 0 ? (
+                    {showTokens ? (
+                        <TokensPanel
+                            tokens={kitchen.tokens}
+                            kitchens={kitchen.kitchens}
+                            lang={lang}
+                            onToggleServed={kitchen.onToggleServed}
+                            onCancel={kitchen.onCancel}
+                            onUpdate={kitchen.onUpdate}
+                        />
+                    ) : currentBill.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
                             <ShoppingCart size={48} className="mx-auto mb-2 opacity-50" />
                             <p>{t('noItemsAdded', lang)}</p>
                         </div>
                     ) : (
-                        currentBill.map((item, idx) => (
-                            <div key={idx} className="flex justify-between items-center py-3 border-b">
-                                <div>
-                                    <p className="font-medium">
-                                        <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
-                                        {translateItemName(item.name, lang)}
-                                    </p>
-                                    <p className="text-sm text-gray-500">
-                                        {translatePortion(item.portion, lang)}
-                                        <span className="mx-1">·</span>
-                                        <span className="text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
-                                    </p>
+                        currentBill.map((item, idx) => {
+                            return (
+                                <div key={idx} className="flex justify-between items-center py-3 border-b">
+                                    <div>
+                                        <p className="font-medium">
+                                            <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
+                                            {translateItemName(item.name, lang)}
+                                        </p>
+                                        <p className="text-sm text-gray-500">
+                                            {translatePortion(item.portion, lang)}
+                                            <span className="mx-1">·</span>
+                                            <span className="text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
+                                        </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                                            className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
+                                        >
+                                            <Minus size={16} />
+                                        </button>
+
+                                        <span className="font-bold w-8 text-center text-gray-800">
+                                            {item.qty}
+                                        </span>
+
+                                        <button
+                                            onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                                            className="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"
+                                        >
+                                            <Plus size={16} />
+                                        </button>
+
+                                        <span className="font-bold w-16 text-right text-gray-800">
+                                            ₹{item.price * item.qty}
+                                        </span>
+                                    </div>
+
                                 </div>
-
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={() => onChangeQuantity(idx, item.qty - 1)}
-                                        className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
-                                    >
-                                        <Minus size={16} />
-                                    </button>
-
-                                    <span className="font-bold w-8 text-center text-gray-800">
-                                        {item.qty}
-                                    </span>
-
-                                    <button
-                                        onClick={() => onChangeQuantity(idx, item.qty + 1)}
-                                        className="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"
-                                    >
-                                        <Plus size={16} />
-                                    </button>
-
-                                    <span className="font-bold w-16 text-right text-gray-800">
-                                        ₹{item.price * item.qty}
-                                    </span>
-                                </div>
-
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
 
-                <div className="border-t p-4 space-y-3">
-                    <div className="flex justify-between font-bold text-xl">
-                        <span>{t('total', lang)}</span>
-                        <span className="text-orange-600">₹{total}</span>
-                    </div>
+                {!showTokens && (
+                    <div className="border-t p-4 space-y-3">
+                        <div className="flex justify-between font-bold text-xl">
+                            <span>{t('total', lang)}</span>
+                            <span className="text-orange-600">₹{total}</span>
+                        </div>
 
-                    <div className="flex gap-3">
-                        <button
-                            onClick={onClearBill}
-                            className="flex-1 py-3 rounded-xl font-bold 
-               bg-red-500 text-white 
+                        <div className="flex gap-2">
+                            <button
+                                onClick={onClearBill}
+                                className="flex-1 min-w-0 py-3 rounded-xl font-bold text-sm
+               bg-red-500 text-white
                active:bg-red-600
-               shadow-md flex items-center justify-center gap-2"
-                        >
-                            <Trash2 size={20} />
-                            {t('clearBill', lang)}
-                        </button>
+               shadow-md flex items-center justify-center gap-1.5"
+                            >
+                                <Trash2 size={kitchen ? 18 : 20} className={kitchen ? 'hidden min-[400px]:block shrink-0' : ''} />
+                                <span className="truncate">{t('clearBill', lang)}</span>
+                            </button>
 
-                        <button
-                            onClick={onPrintBill}
-                            className="flex-1 py-3 rounded-xl font-bold 
-               bg-gray-800 text-white 
+                            <button
+                                onClick={onPrintBill}
+                                className="flex-1 min-w-0 py-3 rounded-xl font-bold text-sm
+               bg-gray-800 text-white
                active:bg-black
-               shadow-md flex items-center justify-center gap-2"
-                        >
-                            <Printer size={20} />
-                            {t('printBill', lang)}
-                        </button>
-                    </div>
+               shadow-md flex items-center justify-center gap-1.5"
+                            >
+                                <Printer size={kitchen ? 18 : 20} className={kitchen ? 'hidden min-[400px]:block shrink-0' : ''} />
+                                <span className="truncate">{t('printBill', lang)}</span>
+                            </button>
+                            {kitchen && (
+                                <button
+                                    onClick={kitchen.onSend}
+                                    disabled={!canSend}
+                                    className={`relative flex-1 min-w-0 py-3 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-1.5 transition-colors ${canSend
+                                        ? 'bg-green-600 text-white active:bg-green-700'
+                                        : 'bg-gray-200 text-gray-400 shadow-none'
+                                        }`}
+                                >
+                                    <Send size={18} />
+                                    <span className="truncate">{t('sendToken', lang)}</span>
+                                    {canSend && (
+                                        <span className="absolute -top-2 -right-1.5 bg-orange-500 text-white text-[11px] font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center shadow">
+                                            {kitchen.unsentCount}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
 
-                </div>
+                        </div>
+
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -542,7 +621,11 @@ const DesktopTableGrid = ({ tables, bills, parcels, selectedTable, onSelectTable
 
 
 // fixed bill section on desktop
-const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, lang }) => {
+const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, kitchen, lang }) => {
+    const [view, setView] = useState('bill'); // 'bill' | 'tokens' (Kitchen System mode only)
+    const showTokens = !!kitchen && view === 'tokens';
+    const canSend = !!kitchen && kitchen.unsentCount > 0 && !kitchen.sending && !!selectedTable;
+
     return (
         <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
@@ -551,80 +634,134 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                 {selectedTable ? `${t('billFor', lang)} ${selectedTable}` : t('billSelectTable', lang)}
             </h3>
 
-            {/* scrollable bill items */}
+            {/* scrollable bill items (or token cards) */}
             <div className="bill-scroll-area mb-3 overflow-y-auto">
-                {currentBill.map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
-                        <span className="flex-1 text-gray-800">
-                            <span className="text-gray-400 mr-1">{idx + 1}.</span>
-                            {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
-                            <span className="block text-xs text-orange-600 font-medium">
-                                ₹{item.price} {t('each', lang)}
-                            </span>
-                        </span>
-
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => onChangeQuantity(idx, item.qty - 1)}
-                                className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"
-                            >
-                                <Minus size={14} />
-                            </button>
-
-                            <span className="w-6 text-center font-bold">
-                                {item.qty}
+                {showTokens ? (
+                    <TokensPanel
+                        tokens={kitchen.tokens}
+                        kitchens={kitchen.kitchens}
+                        lang={lang}
+                        onToggleServed={kitchen.onToggleServed}
+                        onCancel={kitchen.onCancel}
+                        onUpdate={kitchen.onUpdate}
+                    />
+                ) : currentBill.map((item, idx) => {
+                    return (
+                        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
+                            <span className="flex-1 text-gray-800">
+                                <span className="text-gray-400 mr-1">{idx + 1}.</span>
+                                {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
+                                <span className="block text-xs text-orange-600 font-medium">
+                                    ₹{item.price} {t('each', lang)}
+                                </span>
                             </span>
 
-                            <button
-                                onClick={() => onChangeQuantity(idx, item.qty + 1)}
-                                className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center hover:bg-orange-600"
-                            >
-                                <Plus size={14} />
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                                    className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"
+                                >
+                                    <Minus size={14} />
+                                </button>
 
-                            <span className="min-w-15 text-right font-bold text-gray-800">
-                                ₹{item.price * item.qty}
-                            </span>
+                                <span className="w-6 text-center font-bold">
+                                    {item.qty}
+                                </span>
+
+                                <button
+                                    onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                                    className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center hover:bg-orange-600"
+                                >
+                                    <Plus size={14} />
+                                </button>
+
+                                <span className="min-w-15 text-right font-bold text-gray-800">
+                                    ₹{item.price * item.qty}
+                                </span>
+                            </div>
+
                         </div>
-
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* total + actions pinned at bottom */}
             <div className="bill-buttons bg-white pt-2 pb-2 shadow-[0_-2px_8px_rgba(0,0,0,0.1)] sticky bottom-0 z-10">
-                <button
-                    onClick={onToggleParcel}
-                    disabled={currentBill.length === 0}
-                    aria-pressed={!!isParcel}
-                    className={`w-full mb-2 py-2 rounded-lg font-semibold border flex items-center justify-center gap-2 transition-colors disabled:opacity-40 ${isParcel
-                        ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-                        }`}
-                >
-                    <ShoppingBag size={18} />
-                    {t('parcel', lang)}
-                </button>
-
-                <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3">
-                    {t('total', lang)}: ₹{total}
-                </div>
-
-                <div className="flex gap-4">
+                <div className={kitchen ? 'grid grid-cols-2 gap-2 mb-2' : ''}>
                     <button
-                        onClick={onPrintBill}
-                        className="flex-1 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all"
+                        onClick={onToggleParcel}
+                        disabled={currentBill.length === 0}
+                        aria-pressed={!!isParcel}
+                        className={`w-full ${kitchen ? '' : 'mb-2'} py-2 rounded-lg font-semibold border flex items-center justify-center gap-2 transition-colors disabled:opacity-40 ${isParcel
+                            ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                            }`}
                     >
-                        {t('printBill', lang)}
+                        <ShoppingBag size={18} />
+                        {t('parcel', lang)}
                     </button>
 
-                    <button
-                        onClick={onClearBill}
-                        className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all"
-                    >
-                        {t('clearBill', lang)}
-                    </button>
+                    {kitchen && (
+                        <button
+                            onClick={() => setView(v => (v === 'tokens' ? 'bill' : 'tokens'))}
+                            aria-pressed={showTokens}
+                            className={`relative w-full py-2 rounded-lg font-semibold border flex items-center justify-center gap-2 transition-colors ${showTokens
+                                ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
+                                : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                                }`}
+                        >
+                            <ClipboardList size={18} />
+                            {t('tokens', lang)}
+                            {kitchen.pendingServe > 0 && (
+                                <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-[11px] font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center shadow">
+                                    {kitchen.pendingServe}
+                                </span>
+                            )}
+                        </button>
+                    )}
                 </div>
+
+                {!showTokens && (
+                    <>
+                        <div className="bg-gray-800 text-white text-xl font-bold p-3 rounded-lg text-center mb-3">
+                            {t('total', lang)}: ₹{total}
+                        </div>
+
+                        <div className={`flex ${kitchen ? 'gap-2' : 'gap-4'}`}>
+                            <button
+                                onClick={onClearBill}
+                                className={`flex-1 min-w-0 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-800 transition-all ${kitchen ? 'text-sm' : ''}`}
+                            >
+                                {t('clearBill', lang)}
+                            </button>
+                            <button
+                                onClick={onPrintBill}
+                                className={`flex-1 min-w-0 bg-gray-700 text-white py-2 rounded-lg font-semibold hover:bg-black transition-all ${kitchen ? 'text-sm' : ''}`}
+                            >
+                                {t('printBill', lang)}
+                            </button>
+
+                            {kitchen && (
+                                <button
+                                    onClick={kitchen.onSend}
+                                    disabled={!canSend}
+                                    className={`relative flex-1 min-w-0 py-2 rounded-lg font-semibold text-sm transition-all ${canSend
+                                        ? 'bg-green-600 text-white hover:bg-green-700'
+                                        : 'bg-gray-200 text-gray-400'
+                                        }`}
+                                >
+                                    {t('sendToken', lang)}
+                                    {canSend && (
+                                        <span className="absolute -top-2 -right-2 bg-orange-500 text-white text-[11px] font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center shadow">
+                                            {kitchen.unsentCount}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
+
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     );
@@ -657,7 +794,7 @@ const BranchSelectModal = ({ lang, onSelect }) => (
 
 /* ---------------- Settings Modal ---------------- */
 
-const SettingsModal = ({ lang, onChangeLang, branch, onOpenMenuManager, onOpenHistory, onChangeBranch, onClose }) => (
+const SettingsModal = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenHistory, onChangeBranch, onClose }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center">
         <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
@@ -687,6 +824,59 @@ const SettingsModal = ({ lang, onChangeLang, branch, onOpenMenuManager, onOpenHi
                         ))}
                     </div>
                 </div>
+
+                {/* Mode: Normal / Kitchen System */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2 text-gray-700 font-semibold">
+                        <ChefHat size={18} />
+                        {t('appMode', lang)}
+                    </div>
+                    <div className="flex gap-2">
+                        {[['normal', 'modeNormal'], ['kitchen', 'modeKitchen']].map(([id, key]) => (
+                            <button
+                                key={id}
+                                onClick={() => onChangeMode(id)}
+                                aria-pressed={appMode === id}
+                                className={`flex-1 py-2 rounded-lg font-bold border text-sm ${appMode === id
+                                    ? 'bg-orange-500 text-white border-orange-500'
+                                    : 'bg-gray-50 text-gray-700 border-gray-200'
+                                    }`}
+                            >
+                                {t(key, lang)}
+                            </button>
+                        ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                        {t(appMode === 'kitchen' ? 'modeKitchenDesc' : 'modeNormalDesc', lang)}
+                    </p>
+                </div>
+
+                {/* Kitchen-only entries */}
+                {appMode === 'kitchen' && (
+                    <>
+                        <button
+                            onClick={onOpenKitchenSettings}
+                            className="w-full flex items-center justify-between p-4 rounded-xl bg-indigo-50 border border-indigo-100 active:bg-indigo-100"
+                        >
+                            <span className="flex items-center gap-2 font-semibold text-indigo-900">
+                                <ChefHat size={18} />
+                                {t('kitchenSettings', lang)}
+                            </span>
+                            <span className="text-indigo-300">›</span>
+                        </button>
+
+                        <button
+                            onClick={onOpenKds}
+                            className="w-full flex items-center justify-between p-4 rounded-xl bg-indigo-50 border border-indigo-100 active:bg-indigo-100"
+                        >
+                            <span className="flex items-center gap-2 font-semibold text-indigo-900">
+                                <MonitorPlay size={18} />
+                                {t('openKds', lang)}
+                            </span>
+                            <span className="text-indigo-300">›</span>
+                        </button>
+                    </>
+                )}
 
                 {/* Update Menu */}
                 <button
@@ -812,6 +1002,85 @@ export default function RestaurantBillGenerator() {
         if (!branch) return;
         fetchItemFrequency(branch).then(setItemFrequency);
     };
+
+    /* ---------------- Kitchen System (KOT) ---------------- */
+    // 'normal' = the original billing UI, untouched. 'kitchen' = adds tokens + kitchens.
+    const [appMode, setAppMode] = useState(getSavedMode());
+    const kitchenMode = appMode === 'kitchen';
+
+    const [kitchens, setKitchens] = useState([]);
+    const [kitchenLoadError, setKitchenLoadError] = useState(false);
+    const [showKitchenManager, setShowKitchenManager] = useState(false);
+
+    // every live (not yet archived) token of this branch; mirrored in a ref so async
+    // handlers always see the latest list (same trick as billsRef)
+    const [tokens, setTokens] = useState([]);
+    const tokensRef = useRef([]);
+    const updateTokens = (fn) => {
+        const next = fn(tokensRef.current);
+        tokensRef.current = next;
+        setTokens(next);
+    };
+    const upsertToken = (tk) => updateTokens(list => {
+        const rest = list.filter(x => x.id !== tk.id);
+        return tk.archived ? rest : [...rest, tk];
+    });
+
+    const [sendingToken, setSendingToken] = useState(false);
+    const archiveChainRef = useRef(Promise.resolve()); // pending 'archive tokens' DB calls, run in order
+    const sendingTokenRef = useRef(false);
+    const [cancelTarget, setCancelTarget] = useState(null);   // token being cancelled
+    const [updateTarget, setUpdateTarget] = useState(null);   // token being edited
+
+    // load kitchens + tokens when Kitchen mode is on; refresh whenever the app comes back to the foreground
+    useEffect(() => {
+        if (!branch || !kitchenMode) return;
+        let cancelled = false;
+
+        const load = async () => {
+            try {
+                const [ks, tks] = await Promise.all([fetchKitchens(), fetchActiveTokens(branch)]);
+                if (cancelled) return;
+                setKitchens(ks);
+                updateTokens(() => tks);
+                setKitchenLoadError(false);
+            } catch (err) {
+                console.error('Error loading kitchen data:', err);
+                if (!cancelled) setKitchenLoadError(true);
+            }
+        };
+
+        load();
+        const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            cancelled = true;
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [branch, kitchenMode]);
+
+    // live token changes from any device (and, next phase, from the KDS)
+    useEffect(() => {
+        if (!branch || !kitchenMode) return;
+
+        const channel = supabase
+            .channel(`kot-realtime-${branch}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'kot_tokens', filter: `branch=eq.${branch}` },
+                (payload) => {
+                    if (payload.eventType === 'DELETE') {
+                        const id = payload.old?.id;
+                        if (id) updateTokens(list => list.filter(x => x.id !== id));
+                        return;
+                    }
+                    if (payload.new) upsertToken(normalizeToken(payload.new));
+                }
+            )
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [branch, kitchenMode]);
 
     const selectedTableRef = useRef(null);
     const viewingTableRef = useRef(null);
@@ -1180,6 +1449,13 @@ export default function RestaurantBillGenerator() {
         const newBills = { ...billsRef.current };
         const bill = [...(newBills[selectedTable] || [])];
 
+        // an empty table getting its first item is a NEW order: any tokens still lingering
+        // from a previous order (bill emptied by minus, failed archive, etc.) must not count
+        // as "already sent" for it
+        if (bill.length === 0 && tokensRef.current.some(tk => tk.tableNumber === selectedTable)) {
+            resetTokensForTable(selectedTable);
+        }
+
         // check if same item + portion already exists
         // (category is part of the match: e.g. "Combination" exists under both Rice and Noodles.
         //  Lines saved before categories were recorded have none and match on name + portion.)
@@ -1243,8 +1519,15 @@ export default function RestaurantBillGenerator() {
         if (!table) return;
         const items = billsRef.current[table] || [];
         if (items.length === 0) return;
-        setParcelsBoth({ ...parcelsRef.current, [table]: !parcelsRef.current[table] });
+        const nextParcel = !parcelsRef.current[table];
+        setParcelsBoth({ ...parcelsRef.current, [table]: nextParcel });
         await enqueueSave(table, items);
+
+        // tokens carry the Parcel label too (so the kitchen sees it)
+        if (kitchenMode && tokensRef.current.some(tk => tk.tableNumber === table)) {
+            updateTokens(list => list.map(tk => (tk.tableNumber === table ? { ...tk, isParcel: nextParcel } : tk)));
+            try { await setParcelOnTokens(branch, table, nextParcel); } catch (err) { console.error(err); }
+        }
     };
 
     // clears current table bill and moves it to completed_bills
@@ -1254,6 +1537,12 @@ export default function RestaurantBillGenerator() {
 
         const billItems = billsRef.current[tableToUpdate];
         if (!billItems || billItems.length === 0) {
+            // Kitchen mode: an emptied bill can still have old tokens hanging around
+            const leftover = tokensRef.current.filter(tk => tk.tableNumber === tableToUpdate);
+            if (kitchenMode && leftover.length > 0) {
+                if (window.confirm(t('clearTokensConfirm', lang))) await resetTokensForTable(tableToUpdate);
+                return;
+            }
             alert('No items to clear');
             return;
         }
@@ -1306,6 +1595,9 @@ export default function RestaurantBillGenerator() {
 
                 // this order just fed into "Fav" — refresh so it reflects the latest counts
                 refreshItemFrequency();
+
+                // tokens end with the bill: next order on this table starts again at #T?_01
+                if (kitchenMode || hasUsedKitchenMode()) resetTokensForTable(tableToUpdate);
 
             } catch (error) {
                 console.error('Error clearing bill:', error);
@@ -1469,6 +1761,131 @@ export default function RestaurantBillGenerator() {
     };
 
 
+    /* ---------------- Kitchen System: token actions ---------------- */
+
+    const kitchenLookup = useMemo(() => buildKitchenLookup(menuItems), [menuItems]);
+
+    const handleChangeMode = (mode) => {
+        saveMode(mode);
+        setAppMode(mode);
+    };
+
+    // Fires a token with ONLY the quantities the kitchen doesn't have yet
+    const handleSendToken = async (table) => {
+        if (!table || sendingTokenRef.current) return;
+
+        const bill = billsRef.current[table] || [];
+        const tableTokens = tokensRef.current.filter(tk => tk.tableNumber === table);
+        const { items } = analyzeBill(bill, tableTokens, kitchenLookup);
+        if (items.length === 0) return;
+
+        sendingTokenRef.current = true;
+        setSendingToken(true);
+        try {
+            await archiveChainRef.current;
+            const created = await createToken({
+                branch,
+                table,
+                items,
+                isParcel: !!parcelsRef.current[table],
+                existing: tableTokens,
+            });
+            upsertToken(created);
+        } catch (err) {
+            console.error('Send token failed:', err);
+            alert(t('tokenSendFailed', lang));
+        } finally {
+            sendingTokenRef.current = false;
+            setSendingToken(false);
+        }
+    };
+
+    // Serve / Served toggle on a single item of a token
+    const handleToggleServed = async (tokenId, idx) => {
+        const tk = tokensRef.current.find(x => x.id === tokenId);
+        if (!tk || tk.status !== 'active') return;
+
+        const makeItems = (source) => source.map((it, i) => {
+            if (i !== idx) return it;
+            return it.served
+                ? { ...it, served: false, servedAt: null }
+                : { ...it, served: true, servedAt: new Date().toISOString() };
+        });
+
+        const prevItems = tk.items;
+        const nextItems = makeItems(prevItems);
+        upsertToken({ ...tk, items: nextItems }); // optimistic
+        try {
+            await patchToken(tokenId, { items: nextItems });
+        } catch (err) {
+            console.error('Serve toggle failed:', err);
+            upsertToken({ ...tk, items: prevItems }); // roll back
+            alert(t('tokenSaveFailed', lang));
+        }
+    };
+
+    // Adjusts the bill by +/- quantities (used when a token is edited or cancelled so the
+    // bill and the tokens never disagree). Lines that reach 0 disappear from the bill.
+    const applyBillDelta = async (table, deltas) => {
+        const bill = [...(billsRef.current[table] || [])];
+        deltas.forEach(d => {
+            const idx = bill.findIndex(b => lineKey(b) === lineKey(d));
+            if (idx >= 0) {
+                const q = bill[idx].qty + d.delta;
+                if (q <= 0) bill.splice(idx, 1);
+                else bill[idx] = { ...bill[idx], qty: q };
+            } else if (d.delta > 0) {
+                bill.push({ name: d.name, portion: d.portion, price: d.price, qty: d.delta, category: d.category });
+            }
+        });
+
+        const newBills = { ...billsRef.current, [table]: bill };
+        billsRef.current = newBills;
+        setBills(newBills);
+        if (bill.length === 0 && parcelsRef.current[table]) {
+            setParcelsBoth({ ...parcelsRef.current, [table]: false });
+        }
+        await enqueueSave(table, bill);
+    };
+
+    const handleCancelToken = async (removeFromBill) => {
+        const tk = cancelTarget;
+        if (!tk) return;
+        try {
+            const saved = await patchToken(tk.id, { status: 'cancelled' });
+            upsertToken(saved);
+            if (removeFromBill) {
+                // served items were eaten — they stay on the bill; everything else goes
+                const deltas = tk.items
+                    .filter(i => !i.removed && !i.served)
+                    .map(i => ({ name: i.name, portion: i.portion, category: i.category, price: i.price, delta: -i.qty }));
+                if (deltas.length) await applyBillDelta(tk.tableNumber, deltas);
+            }
+            setCancelTarget(null);
+        } catch (err) {
+            console.error('Cancel token failed:', err);
+            alert(t('tokenSaveFailed', lang));
+        }
+    };
+
+    const handleSaveTokenUpdate = async (newItems, deltas) => {
+        const tk = updateTarget;
+        if (!tk) return;
+        const saved = await patchToken(tk.id, { items: newItems, revision: (tk.revision || 0) + 1 });
+        upsertToken(saved);
+        if (deltas.length) await applyBillDelta(tk.tableNumber, deltas);
+        setUpdateTarget(null);
+    };
+
+    // Bill cleared (or table emptied) -> its tokens are done; next order restarts at _01
+    const resetTokensForTable = (table) => {
+        updateTokens(list => list.filter(tk => tk.tableNumber !== table));
+        archiveChainRef.current = archiveChainRef.current
+            .then(() => archiveTokens(branch, table))
+            .catch(err => console.error('Could not archive tokens:', err));
+        return archiveChainRef.current;
+    };
+
     // Handle table click from All Tables grid
     const handleAllTablesTableClick = (tableNum) => {
         setViewingTableFromAllTables(tableNum);
@@ -1516,9 +1933,26 @@ export default function RestaurantBillGenerator() {
         setParcelsBoth({ ...parcelsRef.current, [destTable]: !!parcelsRef.current[sourceTable], [sourceTable]: false });
         setShowShiftModal(false);
 
-        // persist both sides — independent per-table saves, safely serialized
-        await enqueueSave(destTable, sourceItems);
-        await enqueueSave(sourceTable, []);
+        // tokens move with the order right away (only the table part of the number changes: #T7_02 -> #T9_02)
+        const movingTokens = tokensRef.current.filter(tk => tk.tableNumber === sourceTable);
+        const hadDestTokens = tokensRef.current.some(tk => tk.tableNumber === destTable);
+        if (movingTokens.length > 0 || hadDestTokens) {
+            updateTokens(list => list
+                .filter(tk => tk.tableNumber !== destTable)
+                .map(tk => (tk.tableNumber === sourceTable
+                    ? { ...tk, tableNumber: destTable, tokenNo: `T${destTable}_${String(tk.seq).padStart(2, '0')}` }
+                    : tk)));
+        }
+
+        // persist: bills (serialized per table) and tokens in parallel
+        const tokenMove = (movingTokens.length > 0 || hadDestTokens)
+            ? moveTokens(branch, sourceTable, destTable, movingTokens).catch(async (err) => {
+                console.error('Move tokens failed:', err);
+                alert(t('tokenSaveFailed', lang));
+                try { const fresh = await fetchActiveTokens(branch); updateTokens(() => fresh); } catch (e) { console.error(e); }
+            })
+            : Promise.resolve();
+        await Promise.all([enqueueSave(destTable, sourceItems), enqueueSave(sourceTable, []), tokenMove]);
 
         // follow the order to its new table so the cart view doesn't go stale
         if (viewingTableFromAllTables === sourceTable) setViewingTableFromAllTables(destTable);
@@ -1538,6 +1972,7 @@ export default function RestaurantBillGenerator() {
         localStorage.removeItem('selectedTable');
         setBills({});
         setParcelsBoth({});
+        updateTokens(() => []);
     };
 
     const handleRequestChangeBranch = () => {
@@ -1559,6 +1994,27 @@ export default function RestaurantBillGenerator() {
     // For All Tables drawer
     const viewingBill = viewingTableFromAllTables ? bills[viewingTableFromAllTables] || [] : currentBill;
     const viewingTotal = viewingBill.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+    // ---- Kitchen System: per-table token data handed to the drawer / desktop bill panel ----
+    const drawerTable = viewingTableFromAllTables || selectedTable;
+    const buildKitchenBundle = (table, bill) => {
+        if (!kitchenMode) return null;
+        const tableTokens = table ? tokens.filter(tk => tk.tableNumber === table) : [];
+        const analysis = analyzeBill(bill, tableTokens, kitchenLookup);
+        return {
+            tokens: tableTokens,
+            kitchens,
+            unsentCount: analysis.count,
+            pendingServe: countPendingServe(tableTokens),
+            sending: sendingToken,
+            onSend: () => handleSendToken(table),
+            onToggleServed: handleToggleServed,
+            onCancel: (tk) => setCancelTarget(tk),
+            onUpdate: (tk) => setUpdateTarget(tk),
+        };
+    };
+    const drawerKitchen = buildKitchenBundle(drawerTable, viewingBill);
+    const desktopKitchen = buildKitchenBundle(selectedTable, currentBill);
 
     const getItemQty = (itemName, portion, category) => {
         if (!selectedTable) return 0;
@@ -1711,6 +2167,7 @@ export default function RestaurantBillGenerator() {
                             onClearBill={clearBill}
                             isParcel={!!(selectedTable && parcels[selectedTable])}
                             onToggleParcel={() => toggleParcel(selectedTable)}
+                            kitchen={desktopKitchen}
                             lang={lang}
                         />
                     </>
@@ -1753,6 +2210,7 @@ export default function RestaurantBillGenerator() {
                     onShiftTable={() => setShowShiftModal(true)}
                     isParcel={!!parcels[viewingTableFromAllTables || selectedTable]}
                     onToggleParcel={() => toggleParcel(viewingTableFromAllTables || selectedTable)}
+                    kitchen={drawerKitchen}
                     lang={lang}
                 />
             )}
@@ -1773,6 +2231,10 @@ export default function RestaurantBillGenerator() {
                     lang={lang}
                     onChangeLang={handleChangeLang}
                     branch={branch}
+                    appMode={appMode}
+                    onChangeMode={handleChangeMode}
+                    onOpenKitchenSettings={() => { setShowSettings(false); setShowKitchenManager(true); }}
+                    onOpenKds={() => { setShowSettings(false); navigate('/kds'); }}
                     onOpenMenuManager={() => { setShowSettings(false); setShowMenuManager(true); }}
                     onOpenHistory={() => { setShowSettings(false); navigate('/history'); }}
                     onChangeBranch={handleRequestChangeBranch}
@@ -1786,7 +2248,40 @@ export default function RestaurantBillGenerator() {
                     items={menuItems}
                     loadWarning={menuWarning}
                     onItemsChange={setMenuItems}
+                    kitchenMode={kitchenMode}
+                    kitchens={kitchens}
                     onClose={() => { setShowMenuManager(false); loadMenu(); }}
+                />
+            )}
+
+            {kitchenMode && showKitchenManager && (
+                <KitchenManager
+                    lang={lang}
+                    kitchens={kitchens}
+                    onKitchensChange={setKitchens}
+                    items={menuItems}
+                    onItemsChange={setMenuItems}
+                    loadError={kitchenLoadError}
+                    onClose={() => { setShowKitchenManager(false); loadMenu(); }}
+                />
+            )}
+
+            {kitchenMode && cancelTarget && (
+                <CancelTokenModal
+                    token={cancelTarget}
+                    lang={lang}
+                    onConfirm={handleCancelToken}
+                    onClose={() => setCancelTarget(null)}
+                />
+            )}
+
+            {kitchenMode && updateTarget && (
+                <UpdateTokenModal
+                    token={updateTarget}
+                    menuItems={mergedMenuItems}
+                    lang={lang}
+                    onSave={handleSaveTokenUpdate}
+                    onClose={() => setUpdateTarget(null)}
                 />
             )}
         </div>

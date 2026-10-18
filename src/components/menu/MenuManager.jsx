@@ -53,7 +53,7 @@ const emptyDraft = (category) => ({
     ratePicker: false,
 });
 
-function ItemEditor({ lang, item, categories, defaultCategory, onSaved, onDeleted, onBack, nextSortOrder }) {
+function ItemEditor({ lang, item, categories, defaultCategory, onSaved, onDeleted, onBack, nextSortOrder, kitchenMode, kitchens }) {
     const isNew = !item;
     const [draft, setDraft] = useState(() =>
         item
@@ -121,6 +121,8 @@ function ItemEditor({ lang, item, categories, defaultCategory, onSaved, onDelete
         setSaving(true);
         try {
             const payload = { ...draft, name, category, options };
+            // Normal mode never writes the kitchen column
+            if (!kitchenMode) delete payload.kitchenId;
             const saved = isNew
                 ? await createMenuItem(payload, nextSortOrder)
                 : await updateMenuItem(item.id, payload);
@@ -302,6 +304,21 @@ function ItemEditor({ lang, item, categories, defaultCategory, onSaved, onDelete
                     </button>
                 </div>
 
+                {/* Kitchen (only in Kitchen System mode) */}
+                {kitchenMode && (
+                    <div>
+                        <label className={labelCls}>{t('kitchenField', lang)}</label>
+                        <select
+                            value={draft.kitchenId || ''}
+                            onChange={(e) => set({ kitchenId: e.target.value || null })}
+                            className={`${inputCls} bg-white`}
+                        >
+                            <option value="">— {t('noKitchenOption', lang)} —</option>
+                            {kitchens.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+                        </select>
+                    </div>
+                )}
+
                 {/* Visibility + layout */}
                 <div className="rounded-xl border border-gray-200 divide-y">
                     <div className="flex items-center justify-between p-3">
@@ -352,7 +369,7 @@ function ItemEditor({ lang, item, categories, defaultCategory, onSaved, onDelete
 
 /* ---------- list screen ---------- */
 
-export default function MenuManager({ lang, items, loadWarning, onItemsChange, onClose }) {
+export default function MenuManager({ lang, items, loadWarning, onItemsChange, onClose, kitchenMode = false, kitchens = [] }) {
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState(null);
     const [editing, setEditing] = useState(null); // null = list, 'new' = add, item = edit
@@ -409,6 +426,8 @@ export default function MenuManager({ lang, items, loadWarning, onItemsChange, o
                         categories={categories}
                         defaultCategory={category || categories[0]}
                         nextSortOrder={nextSortOrder}
+                        kitchenMode={kitchenMode}
+                        kitchens={kitchens}
                         onSaved={handleSaved}
                         onDeleted={handleDeleted}
                         onBack={() => setEditing(null)}
@@ -478,6 +497,9 @@ export default function MenuManager({ lang, items, loadWarning, onItemsChange, o
                                             <p className="font-semibold text-gray-800 truncate">{translateItemName(item.name, lang)}</p>
                                             <p className="text-xs text-gray-500 truncate">
                                                 {translateCategory(item.category, lang)} · <span className="text-orange-600 font-medium">{priceSummary(item, lang)}</span>
+                                                {kitchenMode && (
+                                                    <> · <span className="text-indigo-600 font-medium">{kitchens.find(k => k.id === item.kitchenId)?.name || '—'}</span></>
+                                                )}
                                             </p>
                                         </div>
                                         <Switch

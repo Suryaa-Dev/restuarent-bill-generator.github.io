@@ -1,401 +1,161 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Mail, FileText, Calendar, Clock, CheckCircle } from 'lucide-react';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { format } from 'date-fns';
-import { toISTParts } from '../../lib/time';
+import { Download, FileText, Clock, CheckCircle, AlertCircle, IndianRupee, ShoppingBag, TrendingUp, Package } from 'lucide-react';
+import { BRANCH_OPTIONS } from '../../lib/branchMenu';
+import { buildReportData } from '../../lib/reportData';
+import { generateReportPdf } from '../../lib/pdfReport';
+import { inr, num } from '../../lib/analytics';
+import { formatDateKey, formatISTDateTime, toISTParts } from '../../lib/time';
+import { StatCard, LoadingBlock } from './shared';
 
-// 'dd/MM HH:mm' in IST, independent of the device timezone
-const formatISTShort = (value) => {
-  const p = toISTParts(value);
-  const z = (n) => String(n).padStart(2, '0');
-  return `${z(p.day)}/${z(p.month)} ${z(p.hour)}:${z(p.minute)}`;
+const REPORTS = [
+  { id: 'summary', name: 'Sales Summary', icon: '📊', description: 'Totals, sales trend, categories and the top 10 items.', includes: ['KPIs', 'Trend chart', 'Categories', 'Top 10 items'] },
+  { id: 'detailed', name: 'Detailed Sales Report', icon: '📋', description: 'Every bill in the period with items, table and type.', includes: ['All bills', 'Items per bill', 'Dine-in / Parcel'] },
+  { id: 'items', name: 'Item Performance', icon: '🍽️', description: 'Every item sold: quantity, revenue and share of sales.', includes: ['All items', 'Avg price', 'Share of sales'] },
+  { id: 'hourly', name: 'Hourly Breakdown', icon: '⏰', description: 'Bills and sales hour by hour in IST, with the busiest hour.', includes: ['Bills chart', 'Sales chart', 'Hour table'] },
+  { id: 'category', name: 'Category Analysis', icon: '📁', description: 'Revenue by category and the best seller in each.', includes: ['Category share', 'Best sellers'] },
+  { id: 'parcel', name: 'Parcel Report', icon: '📦', description: 'Dine-in vs parcel bills and the most-ordered parcel items.', includes: ['Dine-in vs Parcel', 'Top parcel items'] },
+];
+
+const csvCell = (v) => {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
+const csvRow = (cells) => cells.map(csvCell).join(',');
+const money = (n) => (Number(n) || 0).toFixed(2);
 
-export default function ReportsTab({ bills, dateRange, loading }) {
-  const [selectedReport, setSelectedReport] = useState('summary');
-  const [emailSettings, setEmailSettings] = useState({
-    email: '',
-    frequency: 'daily',
-    time: '09:00',
-    enabled: false
-  });
+export default function ReportsTab({ bills, range, dateRange, branch, loading }) {
   const [exportStatus, setExportStatus] = useState(null);
+  const data = useMemo(() => buildReportData(bills, range), [bills, range]);
+  const hasData = bills.length > 0;
 
-  const reportTypes = [
-    {
-      id: 'summary',
-      name: 'Daily Summary',
-      description: 'Overview of daily sales, orders, and top items',
-      icon: '📊'
-    },
-    {
-      id: 'detailed',
-      name: 'Detailed Sales Report',
-      description: 'Complete breakdown with all transactions',
-      icon: '📋'
-    },
-    {
-      id: 'items',
-      name: 'Item Performance',
-      description: 'Analysis of all menu items',
-      icon: '🍽️'
-    },
-    {
-      id: 'hourly',
-      name: 'Hourly Breakdown',
-      description: 'Sales distribution by hour',
-      icon: '⏰'
-    },
-    {
-      id: 'category',
-      name: 'Category Analysis',
-      description: 'Performance by food categories',
-      icon: '📁'
-    }
-  ];
+  const branchName = branch === 'all' || !branch
+    ? 'All Branches'
+    : BRANCH_OPTIONS.find(b => b.id === branch)?.label.en || branch;
 
-  const calculateStats = () => {
-    const totalSales = bills.reduce((sum, bill) => sum + parseFloat(bill.total), 0);
-    const billsCount = bills.length;
-    const avgBill = billsCount > 0 ? totalSales / billsCount : 0;
-    const itemsSold = bills.reduce((sum, bill) => {
-      return sum + bill.items.reduce((itemSum, item) => itemSum + item.qty, 0);
-    }, 0);
+  const periodText = !range
+    ? 'Custom range'
+    : range.days === 1
+      ? formatDateKey(range.startKey)
+      : `${formatDateKey(range.startKey)} to ${formatDateKey(range.endKey)} (${range.days} days)`;
 
-    return { totalSales, billsCount, avgBill, itemsSold };
+  const flash = (status) => {
+    setExportStatus(status);
+    if (status !== 'generating') setTimeout(() => setExportStatus(null), 3000);
   };
 
-  const getTopItems = () => {
-    const itemMap = {};
-
-    bills.forEach(bill => {
-      bill.items.forEach(item => {
-        const key = `${item.name} (${item.portion})`;
-        if (!itemMap[key]) {
-          itemMap[key] = { name: key, quantity: 0, revenue: 0 };
-        }
-        itemMap[key].quantity += item.qty;
-        itemMap[key].revenue += item.price * item.qty;
-      });
-    });
-
-    return Object.values(itemMap)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10);
+  const exportToPDF = (type) => {
+    if (!hasData) return;
+    flash('generating');
+    // let the "generating" banner paint before the (synchronous) PDF work starts
+    setTimeout(() => {
+      try {
+        const report = REPORTS.find(r => r.id === type);
+        const doc = generateReportPdf(type, data, { reportName: report.name, branchName, periodText });
+        const stamp = toISTParts(new Date());
+        doc.save(`${type}-report-${range?.startKey || stamp.dateKey}${range && range.days > 1 ? `_to_${range.endKey}` : ''}.pdf`);
+        flash('success');
+      } catch (err) {
+        console.error('Error generating PDF:', err);
+        flash('error');
+      }
+    }, 50);
   };
 
-  const getHourlySales = () => {
-    const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-      hour: `${i}:00`,
-      sales: 0,
-      orders: 0
-    }));
-
-    bills.forEach(bill => {
-      const hour = bill.hour_of_day;
-      hourlyData[hour].sales += parseFloat(bill.total);
-      hourlyData[hour].orders += 1;
-    });
-
-    return hourlyData.filter(h => h.orders > 0);
-  };
-
-  const getCategoryBreakdown = () => {
-    const categoryMap = {};
-
-    bills.forEach(bill => {
-      bill.items.forEach(item => {
-        const category = item.category || 'Other';
-        if (!categoryMap[category]) {
-          categoryMap[category] = { name: category, revenue: 0, quantity: 0 };
-        }
-        categoryMap[category].revenue += item.price * item.qty;
-        categoryMap[category].quantity += item.qty;
-      });
-    });
-
-    return Object.values(categoryMap).sort((a, b) => b.revenue - a.revenue);
-  };
-
-  const exportToPDF = (reportType) => {
-    setExportStatus('generating');
-    
+  const exportToCSV = (type) => {
+    if (!hasData) return;
+    flash('generating');
     try {
-      const doc = new jsPDF();
-      const stats = calculateStats();
-      const dateRangeText = dateRange.replace(/([A-Z])/g, ' $1').trim();
+      const report = REPORTS.find(r => r.id === type);
+      const { stats, split } = data;
+      const rows = [
+        ['Anand Fast Food - ' + report.name],
+        ['Branch', branchName],
+        ['Period', periodText],
+        ['Generated (IST)', formatISTDateTime(new Date())],
+        [],
+        ['Summary'],
+        ['Total Sales (INR)', money(stats.sales)],
+        ['Bills', stats.orders],
+        ['Average Bill (INR)', money(stats.avg)],
+        ['Items Sold', stats.items],
+        ['Parcel Bills', split.parcel.orders],
+        ['Dine-in Bills', split.dineIn.orders],
+        [],
+      ];
 
-      // Header
-      doc.setFontSize(24);
-      doc.text('Anand Dabeli', 14, 20);
-      
-      doc.setFontSize(16);
-      doc.text(`${reportTypes.find(r => r.id === reportType)?.name || 'Sales Report'}`, 14, 30);
-      
-      doc.setFontSize(10);
-      doc.text(`Period: ${dateRangeText}`, 14, 38);
-      doc.text(`Generated: ${format(new Date(), 'PPpp')}`, 14, 44);
-      
-      doc.line(14, 48, 196, 48);
-
-      let yPos = 56;
-
-      // Summary Stats
-      doc.setFontSize(14);
-      doc.text('Summary Statistics', 14, yPos);
-      yPos += 4;
-
-      autoTable(doc, {
-        startY: yPos,
-        head: [['Metric', 'Value']],
-        body: [
-          ['Total Sales', `₹${stats.totalSales.toFixed(2)}`],
-          ['Number of Bills', stats.billsCount.toString()],
-          ['Average Bill Value', `₹${stats.avgBill.toFixed(2)}`],
-          ['Total Items Sold', stats.itemsSold.toString()]
-        ],
-        theme: 'grid',
-        headStyles: { fillColor: [255, 126, 71] }
-      });
-
-      yPos = doc.lastAutoTable.finalY + 10;
-
-      // Report-specific content
-      if (reportType === 'summary' || reportType === 'detailed') {
-        doc.setFontSize(14);
-        doc.text('Top Selling Items', 14, yPos);
-        yPos += 4;
-
-        const topItems = getTopItems();
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Item', 'Quantity', 'Revenue']],
-          body: topItems.map(item => [
-            item.name,
-            item.quantity.toString(),
-            `₹${item.revenue.toFixed(2)}`
-          ]),
-          theme: 'striped',
-          headStyles: { fillColor: [255, 126, 71] }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
+      if (type === 'summary') {
+        rows.push(['Top 10 Items'], ['Item', 'Category', 'Quantity', 'Revenue (INR)', '% of Sales']);
+        data.items.slice(0, 10).forEach(r => rows.push([r.name, r.category, r.quantity, money(r.revenue), r.share.toFixed(1)]));
+        rows.push([], ['Categories'], ['Category', 'Quantity', 'Revenue (INR)', '% of Sales']);
+        data.categories.forEach(c => rows.push([c.name, c.quantity, money(c.revenue), c.share.toFixed(1)]));
+        if (data.daily.length > 1) {
+          rows.push([], ['Daily'], ['Date', 'Bills', 'Sales (INR)']);
+          data.daily.forEach(d => rows.push([d.key, d.orders, money(d.sales)]));
+        }
       }
-
-      if (reportType === 'items') {
-        doc.setFontSize(14);
-        doc.text('Complete Item Performance', 14, yPos);
-        yPos += 4;
-
-        const allItems = getTopItems();
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Item', 'Quantity Sold', 'Revenue', 'Avg Price']],
-          body: allItems.map(item => [
-            item.name,
-            item.quantity.toString(),
-            `₹${item.revenue.toFixed(2)}`,
-            `₹${(item.revenue / item.quantity).toFixed(2)}`
-          ]),
-          theme: 'striped',
-          headStyles: { fillColor: [255, 126, 71] }
+      if (type === 'detailed') {
+        rows.push(['Transactions'], ['Date (IST)', 'Time (IST)', 'Branch', 'Table', 'Type', 'Items', 'Total (INR)']);
+        data.transactions.forEach(b => {
+          const p = toISTParts(b.completed_at);
+          rows.push([
+            p.dateKey,
+            `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`,
+            b.branch,
+            b.table_number,
+            b.is_parcel ? 'Parcel' : 'Dine-in',
+            b.items.map(i => `${i.name}${i.portion ? ` (${i.portion})` : ''} x${i.qty}`).join('; '),
+            money(b.total),
+          ]);
         });
       }
-
-      if (reportType === 'hourly') {
-        doc.setFontSize(14);
-        doc.text('Hourly Sales Breakdown', 14, yPos);
-        yPos += 4;
-
-        const hourlySales = getHourlySales();
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Hour', 'Orders', 'Sales']],
-          body: hourlySales.map(h => [
-            h.hour,
-            h.orders.toString(),
-            `₹${h.sales.toFixed(2)}`
-          ]),
-          theme: 'striped',
-          headStyles: { fillColor: [255, 126, 71] }
-        });
+      if (type === 'items') {
+        rows.push(['All Items'], ['Item', 'Category', 'Quantity', 'Revenue (INR)', 'Avg Price (INR)', 'In Bills', '% of Sales']);
+        data.items.forEach(r => rows.push([r.name, r.category, r.quantity, money(r.revenue), money(r.avgPrice), r.bills, r.share.toFixed(1)]));
+      }
+      if (type === 'hourly') {
+        rows.push(['Hourly Breakdown (IST)'], ['Hour', 'Bills', 'Sales (INR)', 'Avg Bill (INR)', '% of Sales']);
+        data.hourly.forEach(h => rows.push([h.label, h.orders, money(h.sales), money(h.avg), h.share.toFixed(1)]));
+      }
+      if (type === 'category') {
+        rows.push(['Category Analysis'], ['Category', 'Quantity', 'Revenue (INR)', '% of Sales']);
+        data.categories.forEach(c => rows.push([c.name, c.quantity, money(c.revenue), c.share.toFixed(1)]));
+      }
+      if (type === 'parcel') {
+        rows.push(['Parcel Items'], ['Item', 'Category', 'Parcel Qty', 'Total Qty']);
+        data.parcelItems.forEach(r => rows.push([r.name, r.category, r.parcelQty, r.quantity]));
       }
 
-      if (reportType === 'category') {
-        doc.setFontSize(14);
-        doc.text('Category Performance', 14, yPos);
-        yPos += 4;
-
-        const categories = getCategoryBreakdown();
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Category', 'Items Sold', 'Revenue']],
-          body: categories.map(cat => [
-            cat.name,
-            cat.quantity.toString(),
-            `₹${cat.revenue.toFixed(2)}`
-          ]),
-          theme: 'striped',
-          headStyles: { fillColor: [255, 126, 71] }
-        });
-      }
-
-      if (reportType === 'detailed') {
-        // Add new page for detailed transactions
-        doc.addPage();
-        yPos = 20;
-
-        doc.setFontSize(14);
-        doc.text('Transaction Details', 14, yPos);
-        yPos += 4;
-
-        // every bill in the period (autoTable paginates), parcel bills marked
-        const transactions = bills.map(bill => {
-          const itemsText = bill.items.map(i => `${i.name} x${i.qty}`).join(', ');
-          return [
-            formatISTShort(bill.completed_at),
-            `Table ${bill.table_number}${bill.is_parcel ? ' (Parcel)' : ''}`,
-            itemsText.length > 60 ? itemsText.substring(0, 60) + '...' : itemsText,
-            `₹${parseFloat(bill.total).toFixed(2)}`
-          ];
-        });
-
-        autoTable(doc, {
-          startY: yPos,
-          head: [['Date/Time', 'Table', 'Items', 'Total']],
-          body: transactions,
-          theme: 'grid',
-          headStyles: { fillColor: [255, 126, 71] },
-          styles: { fontSize: 8 }
-        });
-      }
-
-      // Footer
-      const pageCount = doc.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.text(
-          `Page ${i} of ${pageCount} | Generated by Restaurant Analytics Dashboard`,
-          14,
-          doc.internal.pageSize.height - 10
-        );
-      }
-
-      // Save
-      const fileName = `${reportType}-report-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`;
-      doc.save(fileName);
-
-      setExportStatus('success');
-      setTimeout(() => setExportStatus(null), 3000);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      setExportStatus('error');
-      setTimeout(() => setExportStatus(null), 3000);
-    }
-  };
-
-  const exportToCSV = (reportType) => {
-    setExportStatus('generating');
-
-    try {
-      let csvContent = '';
-      const stats = calculateStats();
-
-      // Header
-      csvContent += 'Anand Dabeli - Sales Report\n';
-      csvContent += `Report Type: ${reportTypes.find(r => r.id === reportType)?.name}\n`;
-      csvContent += `Period: ${dateRange}\n`;
-      csvContent += `Generated: ${format(new Date(), 'PPpp')}\n\n`;
-
-      // Summary
-      csvContent += 'Summary Statistics\n';
-      csvContent += 'Metric,Value\n';
-      csvContent += `Total Sales,₹${stats.totalSales.toFixed(2)}\n`;
-      csvContent += `Number of Bills,${stats.billsCount}\n`;
-      csvContent += `Average Bill,₹${stats.avgBill.toFixed(2)}\n`;
-      csvContent += `Items Sold,${stats.itemsSold}\n\n`;
-
-      // Report-specific data
-      if (reportType === 'items' || reportType === 'summary') {
-        csvContent += 'Top Items\n';
-        csvContent += 'Item,Quantity,Revenue\n';
-        const topItems = getTopItems();
-        topItems.forEach(item => {
-          csvContent += `"${item.name}",${item.quantity},₹${item.revenue.toFixed(2)}\n`;
-        });
-      }
-
-      if (reportType === 'hourly') {
-        csvContent += '\nHourly Breakdown\n';
-        csvContent += 'Hour,Orders,Sales\n';
-        const hourlySales = getHourlySales();
-        hourlySales.forEach(h => {
-          csvContent += `${h.hour},${h.orders},₹${h.sales.toFixed(2)}\n`;
-        });
-      }
-
-      if (reportType === 'category') {
-        csvContent += '\nCategory Performance\n';
-        csvContent += 'Category,Quantity,Revenue\n';
-        const categories = getCategoryBreakdown();
-        categories.forEach(cat => {
-          csvContent += `${cat.name},${cat.quantity},₹${cat.revenue.toFixed(2)}\n`;
-        });
-      }
-
-      // Download
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
+      // BOM so Excel opens it as UTF-8; no currency symbol so cells stay real numbers
+      const blob = new Blob(['\uFEFF' + rows.map(csvRow).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `${reportType}-report-${format(new Date(), 'yyyy-MM-dd')}.csv`);
-      link.style.visibility = 'hidden';
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${type}-report-${range?.startKey || toISTParts(new Date()).dateKey}${range && range.days > 1 ? `_to_${range.endKey}` : ''}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
-      setExportStatus('success');
-      setTimeout(() => setExportStatus(null), 3000);
-    } catch (error) {
-      console.error('Error generating CSV:', error);
-      setExportStatus('error');
-      setTimeout(() => setExportStatus(null), 3000);
+      URL.revokeObjectURL(url);
+      flash('success');
+    } catch (err) {
+      console.error('Error generating CSV:', err);
+      flash('error');
     }
   };
 
-  const scheduleEmail = () => {
-    // This is a placeholder - in production, you'd call your backend API
-    alert(`Email scheduled!\n\nFrequency: ${emailSettings.frequency}\nTime: ${emailSettings.time}\nEmail: ${emailSettings.email}\n\nNote: This is a demo. In production, this would integrate with your email service.`);
-    setEmailSettings({ ...emailSettings, enabled: true });
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-xl text-gray-600">Loading reports...</div>
-      </div>
-    );
-  }
+  if (loading) return <LoadingBlock label="Loading reports..." />;
 
   return (
     <div className="space-y-6">
-      {/* Export Status Banner */}
       {exportStatus && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`p-4 rounded-lg flex items-center gap-3 ${
-            exportStatus === 'generating' ? 'bg-blue-50 text-blue-700' :
-            exportStatus === 'success' ? 'bg-green-50 text-green-700' :
-            'bg-red-50 text-red-700'
-          }`}
+          className={`p-4 rounded-lg flex items-center gap-3 ${exportStatus === 'generating' ? 'bg-blue-50 text-blue-700' : exportStatus === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}
         >
           {exportStatus === 'generating' && <Clock className="animate-spin" size={20} />}
           {exportStatus === 'success' && <CheckCircle size={20} />}
-          {exportStatus === 'error' && <FileText size={20} />}
+          {exportStatus === 'error' && <AlertCircle size={20} />}
           <span className="font-medium">
             {exportStatus === 'generating' && 'Generating report...'}
             {exportStatus === 'success' && 'Report exported successfully!'}
@@ -404,149 +164,74 @@ export default function ReportsTab({ bills, dateRange, loading }) {
         </motion.div>
       )}
 
-      {/* Quick Export Section */}
-      <div className="bg-linear-to-r from-orange-500 to-red-500 rounded-xl shadow-lg p-6 text-white">
-        <h2 className="text-2xl font-bold mb-4">📊 Quick Export</h2>
-        <p className="mb-6">Generate and download reports instantly</p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Hero / quick export */}
+      <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-xl shadow-lg p-6 text-white">
+        <h2 className="text-2xl font-bold">Reports &amp; Exports</h2>
+        <p className="text-orange-50 mt-1">{branchName} · {periodText}</p>
+        <p className="text-orange-100 text-sm">{num(bills.length)} bills in this period</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
           <button
             onClick={() => exportToPDF('summary')}
-            className="bg-white text-orange-600 px-6 py-3 rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-2"
+            disabled={!hasData}
+            className="bg-white text-orange-600 px-6 py-3 rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            <Download size={20} />
-            Export Summary (PDF)
+            <Download size={20} /> Summary (PDF)
           </button>
           <button
             onClick={() => exportToCSV('summary')}
-            className="bg-white text-orange-600 px-6 py-3 rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-2"
+            disabled={!hasData}
+            className="bg-white/15 border border-white/40 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/25 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            <Download size={20} />
-            Export Summary (CSV)
+            <Download size={20} /> Summary (CSV / Excel)
           </button>
         </div>
       </div>
 
-      {/* Report Templates */}
-      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">📋 Report Templates</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {reportTypes.map((report) => (
-            <motion.div
-              key={report.id}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              whileHover={{ scale: 1.02 }}
-              className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                selectedReport === report.id
-                  ? 'border-orange-500 bg-orange-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-              onClick={() => setSelectedReport(report.id)}
-            >
-              <div className="text-3xl mb-2">{report.icon}</div>
-              <h4 className="font-bold text-gray-900 mb-1">{report.name}</h4>
-              <p className="text-sm text-gray-600 mb-3">{report.description}</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    exportToPDF(report.id);
-                  }}
-                  className="flex-1 px-3 py-2 bg-orange-500 text-white rounded text-xs font-semibold hover:bg-orange-600 transition-colors"
+      {!hasData ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
+          <FileText size={36} className="mx-auto text-gray-300 mb-3" />
+          <p className="text-lg font-semibold text-gray-800">Nothing to export for this period</p>
+          <p className="text-sm text-gray-500 mt-1">Pick a date range or branch that has completed bills.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard icon={<IndianRupee />} title="Total Sales" value={inr(data.stats.sales)} color="bg-green-500" />
+            <StatCard icon={<ShoppingBag />} title="Bills" value={num(data.stats.orders)} color="bg-blue-500" delay={0.05} />
+            <StatCard icon={<TrendingUp />} title="Average Bill" value={inr(data.stats.avg)} color="bg-purple-500" delay={0.1} />
+            <StatCard icon={<Package />} title="Items Sold" value={num(data.stats.items)} color="bg-orange-500" delay={0.15} />
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900">Report templates</h3>
+            <p className="text-sm text-gray-500 mb-4">Each report covers exactly the branch and dates selected above. PDFs are formatted for A4.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {REPORTS.map((report, idx) => (
+                <motion.div
+                  key={report.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: idx * 0.04 }}
+                  className="p-4 rounded-xl border border-gray-200 hover:border-orange-300 hover:shadow-md transition-all flex flex-col"
                 >
-                  PDF
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    exportToCSV(report.id);
-                  }}
-                  className="flex-1 px-3 py-2 bg-blue-500 text-white rounded text-xs font-semibold hover:bg-blue-600 transition-colors"
-                >
-                  CSV
-                </button>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-
-      {/* Email Scheduling */}
-      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-        <div className="flex items-center gap-3 mb-4">
-          <Mail size={24} className="text-blue-500" />
-          <h3 className="text-lg font-bold text-gray-900">📧 Schedule Email Reports</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
-            </label>
-            <input
-              type="email"
-              value={emailSettings.email}
-              onChange={(e) => setEmailSettings({ ...emailSettings, email: e.target.value })}
-              placeholder="owner@restaurant.com"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Frequency
-            </label>
-            <select
-              value={emailSettings.frequency}
-              onChange={(e) => setEmailSettings({ ...emailSettings, frequency: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Time
-            </label>
-            <input
-              type="time"
-              value={emailSettings.time}
-              onChange={(e) => setEmailSettings({ ...emailSettings, time: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
-          </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={scheduleEmail}
-              disabled={!emailSettings.email}
-              className="w-full px-6 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              {emailSettings.enabled ? 'Update Schedule' : 'Schedule Reports'}
-            </button>
-          </div>
-        </div>
-
-        {emailSettings.enabled && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg"
-          >
-            <div className="flex items-center gap-2 text-green-700">
-              <CheckCircle size={20} />
-              <span className="font-medium">
-                Reports scheduled {emailSettings.frequency} at {emailSettings.time} to {emailSettings.email}
-              </span>
+                  <div className="text-3xl mb-2">{report.icon}</div>
+                  <h4 className="font-bold text-gray-900">{report.name}</h4>
+                  <p className="text-sm text-gray-600 mt-1 mb-3 flex-1">{report.description}</p>
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    {report.includes.map(tag => (
+                      <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-700">{tag}</span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => exportToPDF(report.id)} className="flex-1 px-3 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 transition-colors">PDF</button>
+                    <button onClick={() => exportToCSV(report.id)} className="flex-1 px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors">CSV</button>
+                  </div>
+                </motion.div>
+              ))}
             </div>
-          </motion.div>
-        )}
-      </div>
-      
+          </div>
+        </>
+      )}
     </div>
   );
 }

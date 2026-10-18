@@ -239,7 +239,7 @@ export default function OrderHistory() {
                 ) : (
                     <div className="space-y-2">
                         <p className="text-xs text-gray-400 px-1">
-                            {filteredBills.length} bill{filteredBills.length === 1 ? '' : 's'} · ₹{filteredBills.reduce((s, b) => s + (parseFloat(b.total) || 0), 0).toLocaleString('en-IN')}
+                            {filteredBills.length} bill{filteredBills.length === 1 ? '' : 's'}
                         </p>
                         {filteredBills.slice(0, visibleCount).map(bill => (
                             <button

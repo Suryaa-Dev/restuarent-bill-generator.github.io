@@ -1,394 +1,295 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import React, { useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
+import { billTotal, billQty, inr, num, COLORS } from '../../lib/analytics';
+import { WEEKDAYS_MON_FIRST, formatDateKey, formatISTTime } from '../../lib/time';
+import { ChartCard, InsightCard, LoadingBlock } from './shared';
 
-const COLORS = ['#ff7e47', '#4ade80', '#60a5fa', '#f59e0b', '#ec4899', '#8b5cf6'];
+const SLOTS = [
+  { id: 'morning', label: 'Morning', hint: '5 AM - 11 AM', test: h => h >= 5 && h < 11 },
+  { id: 'lunch', label: 'Lunch', hint: '11 AM - 3 PM', test: h => h >= 11 && h < 15 },
+  { id: 'evening', label: 'Evening', hint: '3 PM - 7 PM', test: h => h >= 15 && h < 19 },
+  { id: 'dinner', label: 'Dinner', hint: '7 PM - 11 PM', test: h => h >= 19 && h < 23 },
+  { id: 'late', label: 'Late night', hint: '11 PM - 5 AM', test: h => h >= 23 || h < 5 },
+];
+
+const median = (arr) => {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const pct = (a, b) => (b ? (a / b) * 100 : 0);
 
 export default function CustomerInsightsTab({ bills, loading }) {
-  const [avgItemsPerBill, setAvgItemsPerBill] = useState(0);
-  const [orderSizeDistribution, setOrderSizeDistribution] = useState([]);
-  const [peakDays, setPeakDays] = useState([]);
-  const [categoryByTime, setCategoryByTime] = useState([]);
-  const [billValueRanges, setBillValueRanges] = useState([]);
-  const [repeatPatterns, setRepeatPatterns] = useState([]);
+  const d = useMemo(() => {
+    const n = bills.length;
+    if (!n) return null;
+    const totals = bills.map(billTotal);
+    const qtys = bills.map(billQty);
+    const sales = totals.reduce((s, v) => s + v, 0);
 
-  useEffect(() => {
-    // always recalculate (even for an empty period) so stale numbers from the previous range never linger
-    calculateAvgItemsPerBill();
-    calculateOrderSizeDistribution();
-    calculatePeakDays();
-    calculateCategoryByTime();
-    calculateBillValueRanges();
-    calculateRepeatPatterns();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // ---- items per bill ----
+    const sizeBuckets = [1, 2, 3, 4, 5, 6].map(k => ({ label: k === 6 ? '6+' : String(k), count: 0 }));
+    qtys.forEach(q => { sizeBuckets[Math.min(Math.max(q, 1), 6) - 1].count += 1; });
+    sizeBuckets.forEach(b => { b.share = pct(b.count, n); });
+
+    const segment = (test) => {
+      const idx = qtys.map((q, i) => (test(q) ? i : -1)).filter(i => i >= 0);
+      const s = idx.reduce((acc, i) => acc + totals[i], 0);
+      return { count: idx.length, share: pct(idx.length, n), avg: idx.length ? s / idx.length : 0 };
+    };
+    const segments = {
+      small: segment(q => q <= 2),
+      medium: segment(q => q >= 3 && q <= 5),
+      large: segment(q => q >= 6),
+    };
+
+    // ---- bill value distribution (bucket width adapts to this period's data) ----
+    const sortedTotals = [...totals].sort((a, b) => a - b);
+    const p90 = sortedTotals[Math.min(n - 1, Math.floor(n * 0.9))] || 1;
+    const step = Math.max(50, Math.ceil(p90 / 5 / 50) * 50);
+    const valueBuckets = Array.from({ length: 6 }, (_, i) => ({
+      label: i === 5 ? `${5 * step}+` : `${i * step}-${(i + 1) * step}`, count: 0,
+    }));
+    totals.forEach(t => { valueBuckets[Math.min(Math.floor(t / step), 5)].count += 1; });
+    valueBuckets.forEach(b => { b.share = pct(b.count, n); });
+
+    // ---- category popularity: % of bills containing it ----
+    const catBills = {};
+    bills.forEach(b => { new Set(b.items.map(i => i.category)).forEach(c => { catBills[c] = (catBills[c] || 0) + 1; }); });
+    const categories = Object.entries(catBills)
+      .map(([name, count]) => ({ name, count, share: pct(count, n) }))
+      .sort((a, b) => b.count - a.count);
+
+    // ---- what is ordered when (category mix per part of day) ----
+    const catRevenue = {};
+    bills.forEach(b => b.items.forEach(i => { catRevenue[i.category] = (catRevenue[i.category] || 0) + i.price * i.qty; }));
+    const topCats = Object.entries(catRevenue).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c);
+    const slotRows = SLOTS.map(slot => {
+      const inSlot = bills.filter(b => slot.test(b.hour_of_day));
+      const row = { ...slot, bills: inSlot.length, sales: 0, mix: {} };
+      let rev = 0;
+      inSlot.forEach(b => {
+        row.sales += billTotal(b);
+        b.items.forEach(i => {
+          const key = topCats.includes(i.category) ? i.category : 'Other';
+          row.mix[key] = (row.mix[key] || 0) + i.price * i.qty;
+          rev += i.price * i.qty;
+        });
+      });
+      row.avg = inSlot.length ? row.sales / inSlot.length : 0;
+      row.chart = { label: slot.label };
+      [...topCats, 'Other'].forEach(c => { row.chart[c] = rev ? +(((row.mix[c] || 0) / rev) * 100).toFixed(1) : 0; });
+      return row;
+    }).filter(r => r.bills > 0);
+    const mixKeys = [...topCats, ...(slotRows.some(r => r.mix.Other) ? ['Other'] : [])];
+
+    // ---- weekdays ----
+    const weekdays = WEEKDAYS_MON_FIRST.map(w => {
+      const wb = bills.filter(b => b.day_of_week === w);
+      const s = wb.reduce((acc, b) => acc + billTotal(b), 0);
+      return { weekday: w, short: w.slice(0, 3), bills: wb.length, sales: s, avg: wb.length ? s / wb.length : 0, items: wb.length ? wb.reduce((acc, b) => acc + billQty(b), 0) / wb.length : 0 };
+    });
+
+    // ---- tables ----
+    const tableMap = {};
+    bills.forEach(b => {
+      const t = (tableMap[b.table_number] = tableMap[b.table_number] || { table: b.table_number, bills: 0, sales: 0 });
+      t.bills += 1;
+      t.sales += billTotal(b);
+    });
+    const tables = Object.values(tableMap).map(t => ({ ...t, name: `T${t.table}`, avg: t.sales / t.bills })).sort((a, b) => a.table - b.table);
+    const busiestTable = [...tables].sort((a, b) => b.bills - a.bills)[0];
+
+    // ---- biggest bills ----
+    const biggest = [...bills].sort((a, b) => billTotal(b) - billTotal(a)).slice(0, 5);
+
+    const maxQty = Math.max(...qtys);
+    const parcelShare = pct(bills.filter(b => b.is_parcel).length, n);
+
+    return {
+      n, sales, avg: sales / n, median: median(totals), avgItems: qtys.reduce((s, v) => s + v, 0) / n,
+      biggestBill: Math.max(...totals), maxQty, sizeBuckets, segments, valueBuckets, step, categories,
+      slotRows, mixKeys, weekdays, tables, busiestTable, biggest, parcelShare,
+    };
   }, [bills]);
 
-  const calculateAvgItemsPerBill = () => {
-    const totalItems = bills.reduce((sum, bill) => {
-      return sum + bill.items.reduce((itemSum, item) => itemSum + item.qty, 0);
-    }, 0);
-    
-    const avg = bills.length > 0 ? (totalItems / bills.length).toFixed(1) : 0;
-    setAvgItemsPerBill(avg);
-  };
+  if (loading) return <LoadingBlock label="Loading customer insights..." />;
+  if (!d) return null;
 
-  const calculateOrderSizeDistribution = () => {
-    const ranges = [
-      { range: '1-2 items', min: 1, max: 2, count: 0 },
-      { range: '3-4 items', min: 3, max: 4, count: 0 },
-      { range: '5-6 items', min: 5, max: 6, count: 0 },
-      { range: '7-8 items', min: 7, max: 8, count: 0 },
-      { range: '9+ items', min: 9, max: 999, count: 0 }
-    ];
-
-    bills.forEach(bill => {
-      const totalItems = bill.items.reduce((sum, item) => sum + item.qty, 0);
-      const range = ranges.find(r => totalItems >= r.min && totalItems <= r.max);
-      if (range) range.count++;
-    });
-
-    setOrderSizeDistribution(ranges);
-  };
-
-  const calculatePeakDays = () => {
-  const dayMap = {};
-  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-  bills.forEach(bill => {
-    const day = bill.day_of_week;
-    if (!dayMap[day]) {
-      dayMap[day] = { day, orders: 0, revenue: 0 };
-    }
-    dayMap[day].orders += 1;
-    dayMap[day].revenue += parseFloat(bill.total);
-  });
-
-  // Sort by revenue first (primary), then by orders (secondary)
-  const data = Object.values(dayMap).sort((a, b) => {
-    // First compare by revenue
-    if (b.revenue !== a.revenue) {
-      return b.revenue - a.revenue;
-    }
-    // If revenue is equal, compare by orders
-    return b.orders - a.orders;
-  });
-  
-  setPeakDays(data);
-};
-
-  const calculateCategoryByTime = () => {
-    const timeSlots = {
-      'Morning (6-11)': { time: 'Morning', hours: [6, 7, 8, 9, 10, 11] },
-      'Lunch (12-15)': { time: 'Lunch', hours: [12, 13, 14, 15] },
-      'Evening (16-19)': { time: 'Evening', hours: [16, 17, 18, 19] },
-      'Dinner (20-23)': { time: 'Dinner', hours: [20, 21, 22, 23] }
-    };
-
-    const categoryData = {};
-
-    bills.forEach(bill => {
-      const hour = bill.hour_of_day;
-      let timeSlot = null;
-
-      for (const [key, slot] of Object.entries(timeSlots)) {
-        if (slot.hours.includes(hour)) {
-          timeSlot = slot.time;
-          break;
-        }
-      }
-
-      if (!timeSlot) return;
-
-      bill.items.forEach(item => {
-        const category = item.category || 'Other';
-        const key = `${timeSlot}-${category}`;
-        
-        if (!categoryData[key]) {
-          categoryData[key] = { time: timeSlot, category, quantity: 0 };
-        }
-        categoryData[key].quantity += item.qty;
-      });
-    });
-
-    const data = Object.values(categoryData);
-    setCategoryByTime(data);
-  };
-
-  const calculateBillValueRanges = () => {
-    const ranges = [
-      { range: '₹0-100', min: 0, max: 100, count: 0 },
-      { range: '₹101-200', min: 101, max: 200, count: 0 },
-      { range: '₹201-300', min: 201, max: 300, count: 0 },
-      { range: '₹301-500', min: 301, max: 500, count: 0 },
-      { range: '₹501+', min: 501, max: 999999, count: 0 }
-    ];
-
-    bills.forEach(bill => {
-      const total = parseFloat(bill.total);
-      const range = ranges.find(r => total >= r.min && total <= r.max);
-      if (range) range.count++;
-    });
-
-    setBillValueRanges(ranges);
-  };
-
-  const calculateRepeatPatterns = () => {
-    const dayMap = {};
-
-    bills.forEach(bill => {
-      const day = bill.day_of_week;
-      if (!dayMap[day]) {
-        dayMap[day] = { day, bills: 0, avgBill: 0, totalRevenue: 0 };
-      }
-      dayMap[day].bills += 1;
-      dayMap[day].totalRevenue += parseFloat(bill.total);
-    });
-
-    Object.values(dayMap).forEach(day => {
-      day.avgBill = day.bills > 0 ? (day.totalRevenue / day.bills).toFixed(0) : 0;
-    });
-
-    const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const data = daysOrder.map(d => dayMap[d]).filter(Boolean);
-    
-    setRepeatPatterns(data);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-xl text-gray-600">Loading customer insights...</div>
-      </div>
-    );
-  }
-
-  // Prepare radar chart data
-  const categories = [...new Set(categoryByTime.map(d => d.category))];
-  const radarData = categories.map(cat => {
-    const morning = categoryByTime.find(d => d.time === 'Morning' && d.category === cat)?.quantity || 0;
-    const lunch = categoryByTime.find(d => d.time === 'Lunch' && d.category === cat)?.quantity || 0;
-    const evening = categoryByTime.find(d => d.time === 'Evening' && d.category === cat)?.quantity || 0;
-    const dinner = categoryByTime.find(d => d.time === 'Dinner' && d.category === cat)?.quantity || 0;
-    
-    return {
-      category: cat,
-      Morning: morning,
-      Lunch: lunch,
-      Evening: evening,
-      Dinner: dinner
-    };
-  });
+  const bestWeekday = [...d.weekdays].filter(w => w.bills).sort((a, b) => b.avg - a.avg)[0];
+  const segCards = [
+    { key: 'small', title: 'Quick orders', desc: '1-2 items', tone: 'bg-blue-50 border-blue-100 text-blue-700' },
+    { key: 'medium', title: 'Regular orders', desc: '3-5 items', tone: 'bg-green-50 border-green-100 text-green-700' },
+    { key: 'large', title: 'Big orders', desc: '6+ items', tone: 'bg-purple-50 border-purple-100 text-purple-700' },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <MetricCard
-          icon="📦"
-          title="Avg Items/Bill"
-          value={avgItemsPerBill}
-          color="bg-blue-500"
-        />
-        <MetricCard
-          icon="💰"
-          title="Avg Bill Value"
-          value={`₹${bills.length > 0 ? (bills.reduce((sum, b) => sum + parseFloat(b.total), 0) / bills.length).toFixed(0) : 0}`}
-          color="bg-green-500"
-        />
-        <MetricCard
-          icon="🎯"
-          title="Most Popular Day"
-          value={peakDays[0]?.day || 'N/A'}
-          color="bg-orange-500"
-        />
-        <MetricCard
-          icon="📈"
-          title="Total Orders"
-          value={bills.length}
-          color="bg-purple-500"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <InsightCard icon="🧾" title="Average bill" color="bg-green-500" value={inr(d.avg)} subtitle={`Typical (median) bill ${inr(d.median)}`} />
+        <InsightCard icon="🛒" title="Items per bill" color="bg-blue-500" value={d.avgItems.toFixed(1)} subtitle={`Largest order: ${d.maxQty} items`} />
+        <InsightCard icon="🏆" title="Biggest bill" color="bg-orange-500" value={inr(d.biggestBill)} subtitle={`${(d.biggestBill / d.avg).toFixed(1)}x the average`} />
+        <InsightCard icon="📦" title="Parcel share" color="bg-purple-500" value={`${d.parcelShare.toFixed(0)}%`} subtitle="of bills were parcel" />
       </div>
 
-      {/* Order Size Distribution */}
-      <ChartCard title="📊 Order Size Distribution">
+      {/* Order size */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {segCards.map(s => (
+          <div key={s.key} className={`rounded-xl border p-5 ${s.tone}`}>
+            <p className="text-sm font-semibold">{s.title} <span className="font-normal opacity-70">({s.desc})</span></p>
+            <p className="text-3xl font-bold text-gray-900 mt-1">{d.segments[s.key].share.toFixed(0)}%</p>
+            <p className="text-sm text-gray-600">{num(d.segments[s.key].count)} bills · avg {inr(d.segments[s.key].avg)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ChartCard title="How many items per bill" subtitle="% of bills">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={d.sizeBuckets}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" />
+              <YAxis unit="%" width={44} />
+              <Tooltip formatter={(v, n, p) => [`${v.toFixed(1)}% (${p.payload.count} bills)`, 'Bills']} labelFormatter={(l) => `${l} item${l === '1' ? '' : 's'}`} />
+              <Bar dataKey="share" fill="#60a5fa" radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="share" position="top" formatter={(v) => (v >= 1 ? `${v.toFixed(0)}%` : '')} style={{ fontSize: 11, fill: '#6b7280' }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="How much a bill is worth" subtitle={`Bill value in Rs., groups of ${inr(d.step)}`}>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={d.valueBuckets}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis unit="%" width={44} />
+              <Tooltip formatter={(v, n, p) => [`${v.toFixed(1)}% (${p.payload.count} bills)`, 'Bills']} />
+              <Bar dataKey="share" fill="#4ade80" radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="share" position="top" formatter={(v) => (v >= 1 ? `${v.toFixed(0)}%` : '')} style={{ fontSize: 11, fill: '#6b7280' }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Category reach */}
+      <ChartCard title="What customers reach for" subtitle="% of bills that include at least one item from the category">
+        <div className="space-y-3">
+          {d.categories.map((c, i) => (
+            <div key={c.name}>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-medium text-gray-800">{c.name}</span>
+                <span className="text-gray-600">{c.share.toFixed(0)}% <span className="text-gray-400">({num(c.count)} bills)</span></span>
+              </div>
+              <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${c.share}%`, background: COLORS[i % COLORS.length] }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </ChartCard>
+
+      {/* Time of day */}
+      <ChartCard title="What sells at different times of day" subtitle="Share of revenue by category in each part of the day (IST)">
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={orderSizeDistribution}>
+          <BarChart data={d.slotRows.map(r => r.chart)}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="range" />
-            <YAxis />
-            <Tooltip />
+            <XAxis dataKey="label" />
+            <YAxis unit="%" domain={[0, 100]} width={44} />
+            <Tooltip formatter={(v) => `${v}%`} />
             <Legend />
-            <Bar dataKey="count" fill="#ff7e47" name="Number of Orders" />
+            {d.mixKeys.map((c, i) => <Bar key={c} dataKey={c} stackId="mix" fill={COLORS[i % COLORS.length]} />)}
           </BarChart>
         </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Bill Value Ranges */}
-      <ChartCard title="💵 Bill Value Distribution">
-        <ResponsiveContainer width="100%" height={300}>
-          <PieChart>
-            <Pie
-              data={billValueRanges}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={(entry) => `${entry.range}: ${entry.count}`}
-              outerRadius={100}
-              fill="#8884d8"
-              dataKey="count"
-            >
-              {billValueRanges.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip />
-          </PieChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Peak Days Pattern */}
-      <ChartCard title="📅 Weekly Order Pattern">
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={repeatPatterns}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="day" />
-            <YAxis yAxisId="left" />
-            <YAxis yAxisId="right" orientation="right" />
-            <Tooltip />
-            <Legend />
-            <Bar yAxisId="left" dataKey="bills" fill="#4ade80" name="Orders" />
-            <Bar yAxisId="right" dataKey="avgBill" fill="#60a5fa" name="Avg Bill (₹)" />
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Category Preference by Time - Radar Chart */}
-      <ChartCard title="⏰ Category Preference by Time of Day">
-        <ResponsiveContainer width="100%" height={400}>
-          <RadarChart data={radarData}>
-            <PolarGrid />
-            <PolarAngleAxis dataKey="category" />
-            <PolarRadiusAxis />
-            <Radar name="Morning" dataKey="Morning" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.6} />
-            <Radar name="Lunch" dataKey="Lunch" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.6} />
-            <Radar name="Evening" dataKey="Evening" stroke="#f97316" fill="#f97316" fillOpacity={0.6} />
-            <Radar name="Dinner" dataKey="Dinner" stroke="#dc2626" fill="#dc2626" fillOpacity={0.6} />
-            <Legend />
-            <Tooltip />
-          </RadarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* Peak Days Detailed Table */}
-      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">📊 Day-wise Performance</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-gray-200">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Day</th>
-                <th className="text-right py-3 px-4 font-semibold text-gray-700">Orders</th>
-                <th className="text-right py-3 px-4 font-semibold text-gray-700">Revenue</th>
-                <th className="text-right py-3 px-4 font-semibold text-gray-700">Avg Bill</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Rank</th>
+              <tr className="text-gray-500 border-b">
+                <th className="text-left py-2 font-medium">Part of day</th>
+                <th className="text-right py-2 font-medium">Bills</th>
+                <th className="text-right py-2 font-medium">Sales</th>
+                <th className="text-right py-2 font-medium">Avg bill</th>
               </tr>
             </thead>
             <tbody>
-              {peakDays.map((day, index) => (
-                <motion.tr
-                  key={index}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: index * 0.1 }}
-                  className={`border-b border-gray-100 hover:bg-gray-50 ${
-                    index === 0 ? 'bg-orange-50' : ''
-                  }`}
-                >
-                  <td className="py-3 px-4 font-medium text-gray-900">{day.day}</td>
-                  <td className="py-3 px-4 text-right text-gray-700">{day.orders}</td>
-                  <td className="py-3 px-4 text-right font-semibold text-green-600">
-                    ₹{day.revenue.toFixed(0)}
-                  </td>
-                  <td className="py-3 px-4 text-right text-blue-600">
-                    ₹{(day.revenue / day.orders).toFixed(0)}
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
-                  </td>
-                </motion.tr>
+              {d.slotRows.map(r => (
+                <tr key={r.id} className="border-b border-gray-100">
+                  <td className="py-2 font-medium text-gray-800">{r.label} <span className="text-gray-400 font-normal">{r.hint}</span></td>
+                  <td className="py-2 text-right text-gray-600">{num(r.bills)}</td>
+                  <td className="py-2 text-right text-gray-600">{inr(r.sales)}</td>
+                  <td className="py-2 text-right font-semibold text-green-700">{inr(r.avg)}</td>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </ChartCard>
 
-      {/* Customer Behavior Insights */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <InsightCard
-          title="Small Orders"
-          subtitle="1-2 items"
-          value={`${orderSizeDistribution[0]?.count || 0} orders`}
-          percentage={`${((orderSizeDistribution[0]?.count || 0) / (bills.length || 1) * 100).toFixed(0)}%`}
-          color="bg-blue-100 text-blue-600"
-        />
-        <InsightCard
-          title="Medium Orders"
-          subtitle="3-6 items"
-          value={`${(orderSizeDistribution[1]?.count || 0) + (orderSizeDistribution[2]?.count || 0)} orders`}
-          percentage={`${(((orderSizeDistribution[1]?.count || 0) + (orderSizeDistribution[2]?.count || 0)) / (bills.length || 1) * 100).toFixed(0)}%`}
-          color="bg-green-100 text-green-600"
-        />
-        <InsightCard
-          title="Large Orders"
-          subtitle="7+ items"
-          value={`${(orderSizeDistribution[3]?.count || 0) + (orderSizeDistribution[4]?.count || 0)} orders`}
-          percentage={`${(((orderSizeDistribution[3]?.count || 0) + (orderSizeDistribution[4]?.count || 0)) / (bills.length || 1) * 100).toFixed(0)}%`}
-          color="bg-orange-100 text-orange-600"
-        />
+      {/* Weekdays */}
+      <ChartCard
+        title="Spending by weekday"
+        subtitle={bestWeekday ? `Customers spend the most per bill on ${bestWeekday.weekday}s (${inr(bestWeekday.avg)})` : ''}
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-500 border-b">
+                <th className="text-left py-2 font-medium">Weekday</th>
+                <th className="text-right py-2 font-medium">Bills</th>
+                <th className="text-right py-2 font-medium">Sales</th>
+                <th className="text-right py-2 font-medium">Avg bill</th>
+                <th className="text-right py-2 font-medium">Items/bill</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.weekdays.map(w => (
+                <tr key={w.weekday} className="border-b border-gray-100">
+                  <td className="py-2 font-medium text-gray-800">{w.weekday}</td>
+                  <td className="py-2 text-right text-gray-600">{w.bills ? num(w.bills) : '—'}</td>
+                  <td className="py-2 text-right text-gray-600">{w.bills ? inr(w.sales) : '—'}</td>
+                  <td className={`py-2 text-right font-semibold ${w.weekday === bestWeekday?.weekday ? 'text-green-700' : 'text-gray-700'}`}>{w.bills ? inr(w.avg) : '—'}</td>
+                  <td className="py-2 text-right text-gray-600">{w.bills ? w.items.toFixed(1) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </ChartCard>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ChartCard title="Table usage" subtitle={d.busiestTable ? `Busiest: Table ${d.busiestTable.table} with ${d.busiestTable.bills} bills` : ''}>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={d.tables}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis allowDecimals={false} width={36} />
+              <Tooltip formatter={(v, n, p) => [`${v} bills · ${inr(p.payload.sales)} · avg ${inr(p.payload.avg)}`, 'Table']} />
+              <Bar dataKey="bills" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Biggest bills" subtitle="Top 5 in this period">
+          <div className="space-y-2">
+            {d.biggest.map((b, i) => (
+              <div key={b.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-xl font-bold text-gray-300 w-7">#{i + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900">
+                      Table {b.table_number}{b.is_parcel && <span className="ml-2 text-[11px] bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">Parcel</span>}
+                    </p>
+                    <p className="text-xs text-gray-500">{formatDateKey(b.date_ist)} · {formatISTTime(b.completed_at)} · {billQty(b)} items</p>
+                  </div>
+                </div>
+                <span className="font-bold text-green-600">{inr(billTotal(b))}</span>
+              </div>
+            ))}
+          </div>
+        </ChartCard>
       </div>
     </div>
   );
 }
-
-const ChartCard = ({ title, children }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5 }}
-    className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
-  >
-    <h3 className="text-lg font-bold text-gray-900 mb-4">{title}</h3>
-    {children}
-  </motion.div>
-);
-
-const MetricCard = ({ icon, title, value, color }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.9 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5 }}
-    className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
-  >
-    <div className={`${color} w-12 h-12 rounded-lg flex items-center justify-center text-white text-2xl mb-3`}>
-      {icon}
-    </div>
-    <p className="text-sm text-gray-600 mb-1">{title}</p>
-    <p className="text-2xl font-bold text-gray-900">{value}</p>
-  </motion.div>
-);
-
-const InsightCard = ({ title, subtitle, value, percentage, color }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.9 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5 }}
-    className="bg-white rounded-xl shadow-sm p-6 border border-gray-200"
-  >
-    <p className="text-sm text-gray-600 mb-1">{title}</p>
-    <p className="text-xs text-gray-400 mb-3">{subtitle}</p>
-    <p className="text-2xl font-bold text-gray-900 mb-2">{value}</p>
-    <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${color}`}>
-      {percentage}
-    </div>
-  </motion.div>
-);

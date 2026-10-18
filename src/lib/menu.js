@@ -20,6 +20,7 @@ export function normalizeMenuRow(row) {
         ratePicker: !!row.rate_picker,
         isHidden: !!row.is_hidden,
         sortOrder: row.sort_order ?? 0,
+        kitchenId: row.kitchen_id ?? null,
     };
 }
 
@@ -66,6 +67,8 @@ const toRow = (item) => ({
     options: item.options.map(o => ({ portion: String(o.portion).trim(), price: Number(o.price) })),
     rate_picker: !!item.ratePicker,
     is_hidden: !!item.isHidden,
+    // only sent when the caller deals with kitchens, so Normal mode never touches this column
+    ...(item.kitchenId !== undefined ? { kitchen_id: item.kitchenId || null } : {}),
     updated_at: new Date().toISOString(),
 });
 

@@ -144,7 +144,7 @@ export default function Dashboard() {
   const prevBills = useMemo(() => enrichBills(rawPrevBills, categoryLookup), [rawPrevBills, categoryLookup]);
 
   const renderTabContent = () => {
-    const props = { bills, prevBills, range, prevRange, dateRange, loading, menuItems };
+    const props = { bills, prevBills, range, prevRange, dateRange, loading, menuItems, branch: selectedBranch };
     switch (activeTab) {
       case 'time': return <TimeAnalyticsTab {...props} />;
       case 'menu': return <MenuIntelligenceTab {...props} />;
