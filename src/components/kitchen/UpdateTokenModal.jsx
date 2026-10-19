@@ -20,6 +20,7 @@ const makeNewRow = (opt, qty, replacedFrom) => ({
     removed: false,
     wasRemoved: false,
     isNew: true,
+    addedAt: new Date().toISOString(), // when it entered the kitchen queue (KDS timer)
     replacedFrom: replacedFrom || undefined,
 });
 

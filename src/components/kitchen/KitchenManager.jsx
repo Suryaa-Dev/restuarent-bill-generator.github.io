@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { X, Plus, Search, ChevronLeft, ChevronRight, Trash2, Pencil, Check, ChefHat, UtensilsCrossed, Loader2 } from 'lucide-react';
+import { X, Plus, Search, ChevronLeft, ChevronRight, Trash2, Pencil, Check, ChefHat, UtensilsCrossed, Loader2, MonitorPlay } from 'lucide-react';
+import KdsConfigScreen from './KdsConfigScreen';
 import { t, translateCategory, translateItemName } from '../../i18n/translations';
 import { getCategories } from '../../lib/menu';
 import {
@@ -181,7 +182,7 @@ function AddItemsScreen({ lang, kitchen, kitchens, items, onAssigned, onBack }) 
 
 /* ======================= screen: one kitchen ======================= */
 
-function KitchenDetail({ lang, kitchen, kitchens, items, onKitchensChange, onItemsChange, onAddItems, onBack }) {
+function KitchenDetail({ lang, kitchen, kitchens, items, onKitchensChange, onItemsChange, onAddItems, onOpenKds, onBack }) {
     const [query, setQuery] = useState('');
     const [renaming, setRenaming] = useState(false);
     const [nameDraft, setNameDraft] = useState(kitchen.name);
@@ -284,6 +285,12 @@ function KitchenDetail({ lang, kitchen, kitchens, items, onKitchensChange, onIte
                 >
                     <Plus size={18} /> {t('addItemsToKitchen', lang)}
                 </button>
+                <button
+                    onClick={onOpenKds}
+                    className="w-full py-3 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 font-bold flex items-center justify-center gap-2 active:bg-indigo-100"
+                >
+                    <MonitorPlay size={18} /> {t('kdsDisplaySettings', lang)}
+                </button>
                 {totalMine > 6 && (
                     <div className="relative">
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -372,7 +379,15 @@ export default function KitchenManager({ lang, kitchens, onKitchensChange, items
     return (
         <div className="fixed inset-0 bg-black/50 z-[55] flex items-end md:items-center justify-center">
             <div className="bg-white w-full md:w-[34rem] h-[94vh] md:h-[90vh] rounded-t-2xl md:rounded-2xl flex flex-col overflow-hidden">
-                {screen.name === 'add' && current ? (
+                {screen.name === 'kds' && current ? (
+                    <KdsConfigScreen
+                        lang={lang}
+                        kitchen={current}
+                        items={items}
+                        onSaved={(updated) => onKitchensChange(kitchens.map(k => (k.id === updated.id ? updated : k)))}
+                        onBack={() => setScreen({ name: 'kitchen', id: current.id })}
+                    />
+                ) : screen.name === 'add' && current ? (
                     <AddItemsScreen
                         lang={lang}
                         kitchen={current}
@@ -394,6 +409,7 @@ export default function KitchenManager({ lang, kitchens, onKitchensChange, items
                         onKitchensChange={onKitchensChange}
                         onItemsChange={onItemsChange}
                         onAddItems={() => setScreen({ name: 'add', id: current.id })}
+                        onOpenKds={() => setScreen({ name: 'kds', id: current.id })}
                         onBack={() => setScreen({ name: 'list' })}
                     />
                 ) : (

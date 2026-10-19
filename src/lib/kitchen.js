@@ -26,7 +26,7 @@ export const lineKey = (i) => `${i.name}||${i.portion}||${i.category || ''}`;
 
 /* ---------------- Kitchens ---------------- */
 
-const normalizeKitchen = (r) => ({ id: r.id, name: r.name, sortOrder: r.sort_order ?? 0 });
+const normalizeKitchen = (r) => ({ id: r.id, name: r.name, sortOrder: r.sort_order ?? 0, kdsConfig: r.kds_config || {} });
 
 export async function fetchKitchens() {
     const { data, error } = await supabase
@@ -52,6 +52,18 @@ export async function renameKitchen(id, name) {
     const { data, error } = await supabase
         .from('kitchens')
         .update({ name: name.trim(), updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+    if (error) throw error;
+    return normalizeKitchen(data);
+}
+
+// Saves this kitchen's KDS layout (main boxes, categories, timer limits)
+export async function updateKitchenConfig(id, config) {
+    const { data, error } = await supabase
+        .from('kitchens')
+        .update({ kds_config: config, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select()
         .single();
