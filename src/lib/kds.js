@@ -89,14 +89,27 @@ export function ageColor(oldestMs, now, timer) {
     return 'red';
 }
 
+// Timer colours stay on thin borders and small text only — never as a filled background.
 export const BORDER = {
-    none: 'border-gray-300',
+    none: 'border-gray-200',
     green: 'border-green-500',
-    yellow: 'border-yellow-400',
+    yellow: 'border-amber-400',
     orange: 'border-orange-500',
     red: 'border-red-600',
 };
-export const DOT = { none: 'bg-gray-300', green: 'bg-green-500', yellow: 'bg-yellow-400', orange: 'bg-orange-500', red: 'bg-red-600' };
+export const TEXT = {
+    none: 'text-gray-400',
+    green: 'text-green-600',
+    yellow: 'text-amber-600',
+    orange: 'text-orange-600',
+    red: 'text-red-600',
+};
+// filled colours for the small time badge (same shape as the quantity badge on billing cards)
+export const FILL = { none: 'bg-gray-400', green: 'bg-green-600', yellow: 'bg-amber-500', orange: 'bg-orange-500', red: 'bg-red-600' };
+export const DOT = { none: 'bg-gray-300', green: 'bg-green-500', yellow: 'bg-amber-400', orange: 'bg-orange-500', red: 'bg-red-600' };
+
+// whole minutes the oldest pending item has been waiting (at least 1)
+export const ageMinutes = (oldestMs, now) => Math.max(1, Math.round((now - oldestMs) / 60000));
 
 /* ---------- what changed between two snapshots? (drives arrows + sound) ----------
    up   = quantity newly added to the kitchen queue

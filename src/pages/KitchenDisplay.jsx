@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChefHat, Settings, X, Volume2, VolumeX, Maximize, RotateCw, Check } from 'lucide-react';
-import { t, translateItemName } from '../i18n/translations';
+import { ArrowLeft, ChefHat, Settings, X, Volume2, VolumeX, Maximize, RotateCw, Check, Play } from 'lucide-react';
+import { t } from '../i18n/translations';
 import { getSavedLanguage } from '../lib/branchMenu';
 import { useKdsData } from '../lib/useKdsData';
 import {
@@ -17,6 +17,12 @@ import ItemPage from '../components/kds/ItemPage';
 import TokenTab from '../components/kds/TokenTab';
 
 const KITCHEN_KEY = 'restaurant_kds_kitchen';
+
+// Undo what "Go landscape" did, so billing is free to rotate back to portrait
+function releaseOrientation() {
+    try { window.screen.orientation?.unlock?.(); } catch { /* not supported */ }
+    try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* not supported */ }
+}
 
 /* ---------- landscape prompt (the layout is built for landscape) ---------- */
 
@@ -70,7 +76,7 @@ function KdsSettings({ lang, kitchens, kitchenId, onKitchen, sound, onSound, onB
                                 <button
                                     key={k.id}
                                     onClick={() => onKitchen(k.id)}
-                                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border font-semibold ${k.id === kitchenId ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-50 text-gray-800 border-gray-200'}`}
+                                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border font-semibold ${k.id === kitchenId ? 'bg-orange-500 text-white border-orange-500' : 'bg-gray-50 text-gray-800 border-gray-200'}`}
                                 >
                                     {k.name}
                                     {k.id === kitchenId && <Check size={18} />}
@@ -88,6 +94,17 @@ function KdsSettings({ lang, kitchens, kitchenId, onKitchen, sound, onSound, onB
                         </span>
                         <span className={`text-sm font-bold ${sound ? 'text-green-600' : 'text-gray-400'}`}>{sound ? t('on', lang) : t('off', lang)}</span>
                     </button>
+
+                    {sound && (
+                        <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => playNewOrder()} className="py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-800 flex items-center justify-center gap-1.5 active:bg-gray-100">
+                                <Play size={14} /> {t('kdsTestNew', lang)}
+                            </button>
+                            <button onClick={() => playCancelled()} className="py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-800 flex items-center justify-center gap-1.5 active:bg-gray-100">
+                                <Play size={14} /> {t('kdsTestCancel', lang)}
+                            </button>
+                        </div>
+                    )}
 
                     <button onClick={onBack} className="w-full py-3 rounded-xl bg-orange-500 text-white font-bold flex items-center justify-center gap-2">
                         <ArrowLeft size={18} /> {t('backToApp', lang)}
@@ -112,6 +129,9 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
     const portrait = usePortraitPhone();
 
     // ticking clock for the timer colours + expiring arrows
+    // leaving the KDS (any way) hands rotation back to the device
+    useEffect(() => releaseOrientation, []);
+
     const [now, setNow] = useState(Date.now());
     useEffect(() => {
         const id = setInterval(() => setNow(Date.now()), 10_000);
@@ -128,6 +148,13 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
     // ---- everything below is derived from the token records ----
     const lines = useMemo(() => (kitchenId ? pendingLines(tokens, kitchenId) : []), [tokens, kitchenId]);
     const agg = useMemo(() => aggregate(lines), [lines]);
+    // how many tokens are waiting in each tab (shown as a small count on the tab)
+    const tabCounts = useMemo(() => {
+        const tbl = new Set();
+        const par = new Set();
+        lines.forEach(l => (l.token.isParcel ? par : tbl).add(l.token.id));
+        return { table: tbl.size, parcel: par.size };
+    }, [lines]);
     const menuByKey = useMemo(() => {
         const m = new Map();
         menuItems.forEach(i => m.set(`${i.name}||${i.category || ''}`, i));
@@ -135,7 +162,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
     }, [menuItems]);
 
     // ---- arrows + sound: compare each new snapshot with the previous one ----
-    const [flags, setFlags] = useState({});
+    const [flags, setFlags] = useState(initial?.flags || {});
     const prevRef = useRef({ tokens: null, kitchenId: null });
     useEffect(() => {
         const prev = prevRef.current;
@@ -160,7 +187,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                     else playCancelled();
                 }
             }
-        } else if (prev.kitchenId !== kitchenId) {
+        } else if (prev.kitchenId && prev.kitchenId !== kitchenId) {
             setFlags({}); // switching kitchen: start clean, no alerts
         }
         prevRef.current = { tokens, kitchenId };
@@ -200,29 +227,38 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
     const tabs = [['all', 'kdsAll'], ['table', 'kdsTable'], ['parcel', 'kdsParcel']];
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="h-dvh bg-gray-100 flex flex-col overflow-hidden">
             {portrait && !skipRotate && <RotatePrompt lang={lang} onContinue={() => setSkipRotate(true)} />}
 
             {/* navbar: kitchen name · [All][Table][Parcel] · settings */}
-            <header className="sticky top-0 z-40 bg-white m-2 mb-0 rounded-xl border-2 border-gray-900 px-3 py-1.5 flex items-center gap-2">
-                <div className="w-1/4 min-w-0 text-sm font-bold text-gray-700 truncate flex items-center gap-1.5">
-                    <ChefHat size={16} className="shrink-0 text-indigo-600" />
-                    <span className="truncate">{kitchen?.name || t('kdsTitle', lang)}</span>
+            <header className="shrink-0 z-40 bg-white border-b border-gray-200 px-3 md:px-4 py-2 flex items-center gap-3">
+                <div className="w-1/4 min-w-0 flex items-center gap-2">
+                    <span className="w-9 h-9 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><ChefHat size={20} /></span>
+                    <span className="text-base font-bold text-gray-900 truncate">{kitchen?.name || t('kdsTitle', lang)}</span>
                 </div>
-                <nav className="flex-1 flex justify-center gap-2">
-                    {tabs.map(([id, key]) => (
-                        <button
-                            key={id}
-                            onClick={() => goTab(id)}
-                            className={`px-5 py-1 rounded-full border-2 text-sm font-bold ${tab === id ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-900 border-gray-900'}`}
-                        >
-                            {t(key, lang)}
-                        </button>
-                    ))}
+                <nav className="flex-1 flex justify-center">
+                    <div className="inline-flex gap-1 p-1 rounded-full bg-gray-100">
+                        {tabs.map(([id, key]) => {
+                            const active = tab === id;
+                            const n = id === 'table' ? tabCounts.table : id === 'parcel' ? tabCounts.parcel : 0;
+                            return (
+                                <button
+                                    key={id}
+                                    onClick={() => goTab(id)}
+                                    className={`h-10 px-5 rounded-full text-[15px] font-semibold flex items-center gap-2 transition-colors ${active ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-700 active:bg-gray-200'}`}
+                                >
+                                    {t(key, lang)}
+                                    {n > 0 && (
+                                        <span className={`text-xs font-bold tabular-nums rounded-full px-1.5 py-0.5 leading-none ${active ? 'bg-white/25 text-white' : 'bg-white text-gray-600'}`}>{n}</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </nav>
                 <div className="w-1/4 flex justify-end">
-                    <button onClick={() => setShowSettings(true)} aria-label={t('settings', lang)} className="p-1.5">
-                        <Settings size={24} />
+                    <button onClick={() => setShowSettings(true)} aria-label={t('settings', lang)} className="w-10 h-10 rounded-full flex items-center justify-center text-gray-700 active:bg-gray-100">
+                        <Settings size={22} />
                     </button>
                 </div>
             </header>
@@ -233,15 +269,16 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                     <p className="max-w-xs">{t('kdsNoKitchens', lang)}</p>
                     <button onClick={onBack} className="mt-5 px-6 py-3 rounded-xl bg-orange-500 text-white font-bold">{t('backToApp', lang)}</button>
                 </div>
-            ) : selected ? (
-                <>
-                    <p className="text-center text-xl font-bold text-gray-900 pt-3">{translateItemName(selected.name, lang)}</p>
-                    <ItemPage itemKey={selected.key} lines={lines} menuByKey={menuByKey} now={now} timer={config.timer} lang={lang} />
-                </>
-            ) : tab === 'all' ? (
-                <AllTab config={config} agg={agg} menuByKey={menuByKey} flags={liveFlags} now={now} lang={lang} onOpen={openItem} />
             ) : (
-                <TokenTab mode={tab} lines={lines} kitchenId={kitchenId} now={now} timer={config.timer} lang={lang} />
+                <main className="flex-1 min-h-0">
+                    {selected ? (
+                        <ItemPage itemKey={selected.key} name={selected.name} lines={lines} menuByKey={menuByKey} now={now} timer={config.timer} lang={lang} onBack={() => goTab('all')} />
+                    ) : tab === 'all' ? (
+                        <AllTab config={config} agg={agg} menuByKey={menuByKey} flags={liveFlags} now={now} lang={lang} onOpen={openItem} />
+                    ) : (
+                        <TokenTab mode={tab} lines={lines} kitchenId={kitchenId} now={now} timer={config.timer} lang={lang} />
+                    )}
+                </main>
             )}
 
             {showSettings && (

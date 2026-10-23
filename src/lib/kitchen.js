@@ -22,7 +22,10 @@ export function hasUsedKitchenMode() {
 }
 
 // Identity of a bill/token line. Matches how the bill itself merges lines.
-export const lineKey = (i) => `${i.name}||${i.portion}||${i.category || ''}`;
+// In Kitchen mode a bill can hold the SAME dish twice — once as dine-in, once as parcel —
+// so the parcel flag is part of the identity. Bill lines carry it themselves (isParcel);
+// token lines get it from their token, passed in as the 2nd argument.
+export const lineKey = (i, parcel) => `${i.name}||${i.portion}||${i.category || ''}${(parcel ?? i.isParcel) ? '||P' : ''}`;
 
 /* ---------------- Kitchens ---------------- */
 
@@ -242,7 +245,7 @@ export function computeSentQty(tokens) {
         (tk.items || []).forEach(it => {
             if (it.removed) return;
             if (tk.status === 'cancelled' && !it.served) return;
-            const k = lineKey(it);
+            const k = lineKey(it, !!tk.isParcel);
             sent[k] = (sent[k] || 0) + it.qty;
         });
     });
@@ -274,11 +277,47 @@ export function analyzeBill(bill, tokens, kitchenOf) {
                 qty: unsent,
                 kitchenId,
                 served: false,
+                isParcel: !!line.isParcel, // decides which token (dine-in / parcel) this goes on
             });
         }
     });
     const count = items.reduce((s, i) => s + i.qty, 0);
     return { lines, items, count };
+}
+
+// The Parcel button decides how UNSENT quantities are treated (quantities already sent to the
+// kitchen never change section). Turning it on moves every unsent dine-in quantity into the
+// parcel section; turning it off moves unsent parcel quantities back to dine-in.
+export function convertUnsent(bill, tokens, toParcel) {
+    const sent = computeSentQty(tokens);
+    const out = bill.map(l => ({ ...l }));
+    const base = (l) => `${l.name}||${l.portion}||${l.category || ''}`;
+
+    const groups = new Map();
+    out.forEach(l => {
+        const k = base(l);
+        if (!groups.has(k)) groups.set(k, {});
+        groups.get(k)[l.isParcel ? 'p' : 'd'] = l;
+    });
+
+    groups.forEach((g) => {
+        const from = toParcel ? g.d : g.p;
+        if (!from) return;
+        const move = Math.max(0, from.qty - (sent[lineKey(from)] || 0));
+        if (move === 0) return;
+        from.qty -= move;
+        const to = toParcel ? g.p : g.d;
+        if (to) {
+            to.qty += move;
+        } else {
+            const fresh = { name: from.name, portion: from.portion, price: from.price, qty: move, category: from.category };
+            if (toParcel) fresh.isParcel = true;
+            out.push(fresh);
+            g[toParcel ? 'p' : 'd'] = fresh;
+        }
+    });
+
+    return out.filter(l => l.qty > 0);
 }
 
 // items still waiting to be served across live tokens

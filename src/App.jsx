@@ -29,7 +29,7 @@ import {
     normalizeToken,
     createToken,
     patchToken,
-    setParcelOnTokens,
+    convertUnsent,
     archiveTokens,
     moveTokens,
     analyzeBill,
@@ -262,6 +262,29 @@ const MenuItem = ({ item, onAddItem, currentQty, getQty, lang }) => {
 
 /* ---------------- Cart Drawer (Mobile) ---------------- */
 
+// thin purple "Parcel" divider shown between the dine-in and parcel lists (only when both exist)
+const ParcelDivider = ({ lang }) => (
+    <div className="flex items-center gap-2 mt-3 px-2 py-1 rounded-lg bg-purple-50 text-purple-700">
+        <ShoppingBag size={14} />
+        <span className="text-xs font-bold">{t('parcel', lang)}</span>
+    </div>
+);
+
+// Normal mode: one list, exactly as before. Kitchen mode: dine-in lines first, then the
+// Parcel divider, then parcel lines. `idx` is always the line's real position in the bill.
+const renderBillRows = (bill, kitchen, lang, renderLine) => {
+    if (!kitchen) return bill.map((item, idx) => renderLine(item, idx, idx + 1));
+    const dine = [];
+    const parcel = [];
+    bill.forEach((item, idx) => (item.isParcel ? parcel : dine).push({ item, idx }));
+    let n = 0;
+    return [
+        ...dine.map(({ item, idx }) => renderLine(item, idx, ++n)),
+        ...(dine.length > 0 && parcel.length > 0 ? [<ParcelDivider key="__parcel" lang={lang} />] : []),
+        ...parcel.map(({ item, idx }) => renderLine(item, idx, ++n)),
+    ];
+};
+
 // bottom drawer for current table bill
 // `kitchen` is null in Normal mode (UI stays exactly as before). In Kitchen System mode it
 // carries the token data/handlers and adds: a 4th "Tokens" tab-switch button and a
@@ -307,7 +330,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 
                     <button
                         onClick={onToggleParcel}
-                        disabled={currentBill.length === 0}
+                        disabled={currentBill.length === 0 && !kitchen}
                         aria-pressed={!!isParcel}
                         className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl border transition-colors disabled:opacity-40 ${isParcel
                             ? 'bg-purple-600 text-white border-purple-600 active:bg-purple-700'
@@ -354,12 +377,12 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                             <p>{t('noItemsAdded', lang)}</p>
                         </div>
                     ) : (
-                        currentBill.map((item, idx) => {
+                        renderBillRows(currentBill, kitchen, lang, (item, idx, num) => {
                             return (
                                 <div key={idx} className="flex justify-between items-center py-3 border-b">
                                     <div>
                                         <p className="font-medium">
-                                            <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
+                                            <span className="text-gray-400 font-normal mr-1">{num}.</span>
                                             {translateItemName(item.name, lang)}
                                         </p>
                                         <p className="text-sm text-gray-500">
@@ -645,11 +668,11 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                         onCancel={kitchen.onCancel}
                         onUpdate={kitchen.onUpdate}
                     />
-                ) : currentBill.map((item, idx) => {
+                ) : renderBillRows(currentBill, kitchen, lang, (item, idx, num) => {
                     return (
                         <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
                             <span className="flex-1 text-gray-800">
-                                <span className="text-gray-400 mr-1">{idx + 1}.</span>
+                                <span className="text-gray-400 mr-1">{num}.</span>
                                 {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
                                 <span className="block text-xs text-orange-600 font-medium">
                                     ₹{item.price} {t('each', lang)}
@@ -690,7 +713,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                 <div className={kitchen ? 'grid grid-cols-2 gap-2 mb-2' : ''}>
                     <button
                         onClick={onToggleParcel}
-                        disabled={currentBill.length === 0}
+                        disabled={currentBill.length === 0 && !kitchen}
                         aria-pressed={!!isParcel}
                         className={`w-full ${kitchen ? '' : 'mb-2'} py-2 rounded-lg font-semibold border flex items-center justify-center gap-2 transition-colors disabled:opacity-40 ${isParcel
                             ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
@@ -1459,15 +1482,19 @@ export default function RestaurantBillGenerator() {
         // check if same item + portion already exists
         // (category is part of the match: e.g. "Combination" exists under both Rice and Noodles.
         //  Lines saved before categories were recorded have none and match on name + portion.)
+        // Kitchen mode: with the Parcel button on, new items go into the parcel section; the
+        // same dish can sit in both sections as two separate lines.
+        const parcelMode = kitchenMode && !!parcelsRef.current[selectedTable];
         const existingIndex = bill.findIndex(
             b => b.name === name && b.portion === portion && (!b.category || !category || b.category === category)
+                && (!kitchenMode || !!b.isParcel === parcelMode)
         );
 
         if (existingIndex >= 0) {
             const existing = bill[existingIndex];
             bill[existingIndex] = { ...existing, qty: existing.qty + 1 };
         } else {
-            bill.push({ name, portion, price, qty: 1, category });
+            bill.push({ name, portion, price, qty: 1, category, ...(parcelMode ? { isParcel: true } : {}) });
         }
 
         newBills[selectedTable] = bill;
@@ -1518,16 +1545,24 @@ export default function RestaurantBillGenerator() {
     const toggleParcel = async (table) => {
         if (!table) return;
         const items = billsRef.current[table] || [];
-        if (items.length === 0) return;
         const nextParcel = !parcelsRef.current[table];
+
+        if (kitchenMode) {
+            // Kitchen mode: the button decides how UNSENT quantities are treated. Switching it
+            // moves them between the dine-in and parcel lists; what was already sent stays put.
+            const tableTokens = tokensRef.current.filter(tk => tk.tableNumber === table);
+            const converted = convertUnsent(items, tableTokens, nextParcel);
+            billsRef.current = { ...billsRef.current, [table]: converted };
+            setBills(billsRef.current);
+            setParcelsBoth({ ...parcelsRef.current, [table]: nextParcel });
+            await enqueueSave(table, converted);
+            return;
+        }
+
+        // Normal mode: the whole order is marked / unmarked as a parcel (unchanged)
+        if (items.length === 0) return;
         setParcelsBoth({ ...parcelsRef.current, [table]: nextParcel });
         await enqueueSave(table, items);
-
-        // tokens carry the Parcel label too (so the kitchen sees it)
-        if (kitchenMode && tokensRef.current.some(tk => tk.tableNumber === table)) {
-            updateTokens(list => list.map(tk => (tk.tableNumber === table ? { ...tk, isParcel: nextParcel } : tk)));
-            try { await setParcelOnTokens(branch, table, nextParcel); } catch (err) { console.error(err); }
-        }
     };
 
     // clears current table bill and moves it to completed_bills
@@ -1571,7 +1606,10 @@ export default function RestaurantBillGenerator() {
                         day_of_week: ist.weekday,
                         hour_of_day: ist.hour,
                         date: ist.dateKey,
-                        is_parcel: !!parcelsRef.current[tableToUpdate]
+                        // Kitchen mode: parcel only if EVERY line is a parcel line (a mixed order is not)
+                        is_parcel: kitchenMode
+                            ? billItems.length > 0 && billItems.every(i => i.isParcel)
+                            : !!parcelsRef.current[tableToUpdate]
                     });
 
                 if (insertError) throw insertError;
@@ -1618,19 +1656,32 @@ export default function RestaurantBillGenerator() {
         const now = new Date();
         const dateStr = now.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
         const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-        const isParcelOrder = !!parcelsRef.current[tableToUpdate];
+        // Kitchen mode: parcel lines are printed in their own section; the big PARCEL banner is
+        // only for an order that is parcel from top to bottom. Normal mode is unchanged.
+        const parcelLineCount = kitchenMode ? items.filter(b => b.isParcel).length : 0;
+        const mixedOrder = parcelLineCount > 0 && parcelLineCount < items.length;
+        const isParcelOrder = kitchenMode
+            ? items.length > 0 && parcelLineCount === items.length
+            : !!parcelsRef.current[tableToUpdate];
+        const printItems = kitchenMode
+            ? [...items.filter(b => !b.isParcel), ...items.filter(b => b.isParcel)]
+            : items;
+        const firstParcelIdx = mixedOrder ? printItems.findIndex(b => b.isParcel) : -1;
         const logoUrl = `${window.location.origin}/anand-logo-bw.png`;
 
         let total = 0;
         let totalQty = 0;
 
-        const billRows = items
+        const billRows = printItems
             .map((b, idx) => {
                 const lineTotal = b.price * b.qty;
                 total += lineTotal;
                 totalQty += b.qty;
                 const portion = b.portion ? ` (${translatePortion(b.portion, lang)})` : '';
-                return `
+                const parcelHeader = idx === firstParcelIdx
+                    ? `<div class="center bold" style="border-top:1px dashed #000;border-bottom:1px dashed #000;margin:1.5mm 0;padding:0.5mm 0;">${t('parcel', lang).toUpperCase()}</div>`
+                    : '';
+                return `${parcelHeader}
         <div class="item">
           <div class="name">${idx + 1}. ${translateItemName(b.name, lang)}${portion}</div>
           <div class="line">
@@ -1765,6 +1816,14 @@ export default function RestaurantBillGenerator() {
 
     const kitchenLookup = useMemo(() => buildKitchenLookup(menuItems), [menuItems]);
 
+    // table tiles show the purple parcel bag when the order has any parcel line (or parcel is on)
+    const parcelBadges = useMemo(() => {
+        if (!kitchenMode) return parcels;
+        const out = { ...parcels };
+        Object.entries(bills).forEach(([n, bill]) => { if ((bill || []).some(i => i.isParcel)) out[n] = true; });
+        return out;
+    }, [parcels, bills, kitchenMode]);
+
     const handleChangeMode = (mode) => {
         saveMode(mode);
         setAppMode(mode);
@@ -1783,14 +1842,26 @@ export default function RestaurantBillGenerator() {
         setSendingToken(true);
         try {
             await archiveChainRef.current;
-            const created = await createToken({
-                branch,
-                table,
-                items,
-                isParcel: !!parcelsRef.current[table],
-                existing: tableTokens,
-            });
-            upsertToken(created);
+
+            // new dine-in items and new parcel items are fired as SEPARATE tokens
+            let existing = tableTokens;
+            for (const parcelGroup of [false, true]) {
+                const group = items
+                    .filter(i => !!i.isParcel === parcelGroup)
+                    .map(({ isParcel, ...rest }) => rest); // eslint-disable-line no-unused-vars
+                if (group.length === 0) continue;
+                const created = await createToken({ branch, table, items: group, isParcel: parcelGroup, existing });
+                upsertToken(created);
+                existing = [...existing, created];
+            }
+
+            // Table + parcel mix: the Parcel button was only for this batch, so switch it off.
+            // A fully-parcel order (no dine-in lines) keeps it on for the next items.
+            const billNow = billsRef.current[table] || [];
+            if (parcelsRef.current[table] && billNow.some(l => !l.isParcel)) {
+                setParcelsBoth({ ...parcelsRef.current, [table]: false });
+                await enqueueSave(table, billNow);
+            }
         } catch (err) {
             console.error('Send token failed:', err);
             alert(t('tokenSendFailed', lang));
@@ -1835,7 +1906,7 @@ export default function RestaurantBillGenerator() {
                 if (q <= 0) bill.splice(idx, 1);
                 else bill[idx] = { ...bill[idx], qty: q };
             } else if (d.delta > 0) {
-                bill.push({ name: d.name, portion: d.portion, price: d.price, qty: d.delta, category: d.category });
+                bill.push({ name: d.name, portion: d.portion, price: d.price, qty: d.delta, category: d.category, ...(d.isParcel ? { isParcel: true } : {}) });
             }
         });
 
@@ -1858,7 +1929,7 @@ export default function RestaurantBillGenerator() {
                 // served items were eaten — they stay on the bill; everything else goes
                 const deltas = tk.items
                     .filter(i => !i.removed && !i.served)
-                    .map(i => ({ name: i.name, portion: i.portion, category: i.category, price: i.price, delta: -i.qty }));
+                    .map(i => ({ name: i.name, portion: i.portion, category: i.category, price: i.price, isParcel: !!tk.isParcel, delta: -i.qty }));
                 if (deltas.length) await applyBillDelta(tk.tableNumber, deltas);
             }
             setCancelTarget(null);
@@ -2092,7 +2163,7 @@ export default function RestaurantBillGenerator() {
                         <DesktopTableGrid
                             tables={tables}
                             bills={bills}
-                            parcels={parcels}
+                            parcels={parcelBadges}
                             selectedTable={selectedTable}
                             onSelectTable={setSelectedTable}
                             className="tableselectstyle w-[20%]"
@@ -2176,7 +2247,7 @@ export default function RestaurantBillGenerator() {
                     <AllTablesGrid
                         tables={tables}
                         bills={bills}
-                        parcels={parcels}
+                        parcels={parcelBadges}
                         onTableClick={handleAllTablesTableClick}
                         lang={lang}
                     />

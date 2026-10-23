@@ -157,6 +157,7 @@ export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClo
                     portion: sample.portion,
                     category: sample.category,
                     price: sample.price,
+                    isParcel: !!token.isParcel, // so the bill change lands on the matching section
                     delta: (newQ[k] || 0) - (oldQ[k] || 0),
                 };
             })
