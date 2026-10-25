@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { t } from '../../i18n/translations';
 import { ageColor, itemKey } from '../../lib/kds';
 import KdsBox from './KdsBox';
-import KdsItemRow from './KdsItemRow';
+import KdsItemRow from './kdsItemRow';
 
 const optionsOf = (menuByKey, key) => menuByKey.get(key)?.options?.map(o => o.portion) || [];
 
