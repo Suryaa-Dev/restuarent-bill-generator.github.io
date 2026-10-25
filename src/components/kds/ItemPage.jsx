@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Utensils, ShoppingBag } from 'lucide-react';
 import { ageColor, aggregate, BORDER } from '../../lib/kds';
 import { t, translateItemName } from '../../i18n/translations';
 import { AgeText, PortionBlocks } from './KdsBox';
@@ -7,22 +7,33 @@ import KdsTokenCard from './KdsTokenCard';
 
 const byAge = (a, b) => a.token.createdAt.localeCompare(b.token.createdAt) || a.token.seq - b.token.seq;
 
-function Column({ title, count, entry, options, now, timer, lang, children, empty }) {
+// Tables = blue, Parcel = purple (the app's parcel colour) — a soft tinted panel + icon chip,
+// so the two columns are told apart at a glance. Timer colours stay on the white cards inside.
+const THEME = {
+    table: { panel: 'bg-blue-50 border-blue-100', chip: 'bg-blue-100 text-blue-700', text: 'text-blue-700', Icon: Utensils },
+    parcel: { panel: 'bg-purple-50 border-purple-100', chip: 'bg-purple-100 text-purple-700', text: 'text-purple-700', Icon: ShoppingBag },
+};
+
+function Column({ kind, title, count, entry, options, now, timer, lang, children, empty }) {
+    const th = THEME[kind];
     const color = entry ? ageColor(entry.oldest, now, timer) : 'none';
     return (
-        <div className="flex flex-col min-w-0 min-h-0">
+        <div className={`flex flex-col min-w-0 min-h-0 rounded-2xl border p-2.5 ${th.panel}`}>
+            <div className="shrink-0 flex items-center gap-2 mb-2">
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center ${th.chip}`}><th.Icon size={16} /></span>
+                <p className={`text-sm font-bold uppercase tracking-wide ${th.text}`}>
+                    {title} <span className="font-semibold opacity-70">· {count}</span>
+                </p>
+                {entry && <AgeText oldest={entry.oldest} now={now} colorKey={color} lang={lang} className="text-sm ml-auto" />}
+            </div>
+
             {/* totals: fixed, they never scroll */}
-            <div className={`shrink-0 rounded-2xl border-2 bg-white shadow-sm px-3 py-2 ${BORDER[color]}`}>
-                <div className="flex items-center justify-between mb-1.5">
-                    <p className="text-sm font-bold uppercase tracking-wide text-gray-500">
-                        {title} <span className="text-gray-400 font-semibold normal-case tracking-normal">· {count}</span>
-                    </p>
-                    {entry && <AgeText oldest={entry.oldest} now={now} colorKey={color} lang={lang} className="text-sm" />}
-                </div>
+            <div className={`shrink-0 rounded-xl border-2 bg-white shadow-sm px-3 py-2 ${BORDER[color]}`}>
                 <PortionBlocks portions={entry?.portions} options={options} showZero lang={lang} size="lg" />
             </div>
+
             {/* only this list scrolls */}
-            <div className="mt-3 flex-1 min-h-0 overflow-y-auto space-y-3 pb-1">
+            <div className="mt-2.5 flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-1">
                 {empty ? <p className="text-center text-sm text-gray-400 py-8">{t('kdsNothingPending', lang)}</p> : children}
             </div>
         </div>
@@ -66,7 +77,7 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
 
             <div className="flex-1 min-h-0 grid grid-cols-2 gap-3 md:gap-4 p-3 pt-2 md:p-4">
                 {/* Tables: token number + only the selected item */}
-                <Column title={t('kdsTables', lang)} count={split.table.length} entry={tableAgg} options={options} now={now} timer={timer} lang={lang} empty={split.table.length === 0}>
+                <Column kind="table" title={t('kdsTables', lang)} count={split.table.length} entry={tableAgg} options={options} now={now} timer={timer} lang={lang} empty={split.table.length === 0}>
                     {split.table.map(g => (
                         <KdsTokenCard
                             key={g.token.id}
@@ -81,7 +92,7 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
                 </Column>
 
                 {/* Parcel: the whole token's pending items, selected item in bold */}
-                <Column title={t('kdsParcel', lang)} count={split.parcel.length} entry={parcelAgg} options={options} now={now} timer={timer} lang={lang} empty={split.parcel.length === 0}>
+                <Column kind="parcel" title={t('kdsParcel', lang)} count={split.parcel.length} entry={parcelAgg} options={options} now={now} timer={timer} lang={lang} empty={split.parcel.length === 0}>
                     {split.parcel.map(g => {
                         const all = lines.filter(l => l.token.id === g.token.id);
                         return (

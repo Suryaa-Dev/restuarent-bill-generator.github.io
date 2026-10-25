@@ -141,6 +141,11 @@ export const UI_STRINGS = {
         kdsTimerInvalid: 'Each limit must be larger than the one before it.',
         kdsSaved: 'Saved',
         kdsSaveFailed: 'Could not save. Make sure supabase/03_kds.sql has been run.',
+        secGeneral: 'General',
+        secManage: 'Menu & Orders',
+        updateMenuDesc: 'Add, edit or hide menu items',
+        orderHistoryDesc: 'See past bills',
+        kdsOpenDesc: 'Open the kitchen display screen',
         // ---- Kitchen system ----
         itemSingular: 'item',
         appMode: 'Mode',
@@ -347,6 +352,11 @@ export const UI_STRINGS = {
         kdsTimerInvalid: 'प्रत्येक मर्यादा आधीच्या मर्यादेपेक्षा मोठी हवी.',
         kdsSaved: 'सेव्ह झाले',
         kdsSaveFailed: 'सेव्ह झाले नाही. supabase/03_kds.sql चालवले आहे याची खात्री करा.',
+        secGeneral: 'सामान्य',
+        secManage: 'मेनू आणि ऑर्डर',
+        updateMenuDesc: 'मेनू वस्तू जोडा, बदला किंवा लपवा',
+        orderHistoryDesc: 'जुनी बिले पहा',
+        kdsOpenDesc: 'किचन डिस्प्ले स्क्रीन उघडा',
         // ---- Kitchen system ----
         itemSingular: 'वस्तू',
         appMode: 'मोड',

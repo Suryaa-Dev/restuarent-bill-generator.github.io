@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { t } from '../../i18n/translations';
 import { ageColor, itemKey } from '../../lib/kds';
 import KdsBox from './KdsBox';
+import KdsItemRow from './KdsItemRow';
 
 const optionsOf = (menuByKey, key) => menuByKey.get(key)?.options?.map(o => o.portion) || [];
 
@@ -18,18 +19,15 @@ export default function AllTab({ config, agg, menuByKey, flags, now, lang, onOpe
     const columns = [
         ...config.groups.map(g => ({
             id: g.id,
-            name: g.name,
-            entries: g.items.map(itemKey).map(k => agg.get(k)).filter(Boolean), // box only while it has pending qty
+            entries: g.items.map(itemKey).map(k => agg.get(k)).filter(Boolean), // a row exists only while it has pending qty
         })),
-        ...(others.length > 0 ? [{ id: '__other', name: t('kdsOther', lang), entries: others }] : []),
+        ...(others.length > 0 ? [{ id: '__other', entries: others }] : []),
     ];
 
     const slots = Array.from({ length: 4 }, (_, i) => config.featured[i] || null);
-    // phones: one compact card per row in every category column (two per row only on wide screens)
-    const boxesPerRow = 'grid-cols-1 min-[1000px]:grid-cols-2';
 
     return (
-        <div className="h-full flex flex-col gap-4 p-3 md:p-4">
+        <div className="h-full flex flex-col gap-3 p-3 md:p-4">
             {/* Part 1 — main boxes (always shown, fixed: they never scroll) */}
             <div className="grid grid-cols-4 gap-3 md:gap-4 shrink-0">
                 {slots.map((it, i) => {
@@ -60,39 +58,28 @@ export default function AllTab({ config, agg, menuByKey, flags, now, lang, onOpe
                 })}
             </div>
 
-            {/* Part 2 — custom categories; an item box exists only while it has pending qty.
-                Every column scrolls on its own. */}
+            {/* Part 2 — your custom groups: no titles, just compact one-line rows.
+                Thin dividers separate the groups; every column scrolls on its own. */}
             {columns.length > 0 && (
-                <div className="grid gap-3 flex-1 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, gridTemplateRows: 'minmax(0, 1fr)' }}>
-                    {columns.map(col => {
-                        const units = col.entries.reduce((s, e) => s + e.total, 0);
-                        return (
-                            <section key={col.id} className="flex flex-col min-h-0 rounded-2xl bg-gray-50 border border-gray-200">
-                                <header className="shrink-0 flex items-center justify-between gap-1.5 px-2.5 py-2 border-b border-gray-200">
-                                    <h3 className="text-[13px] md:text-sm font-bold text-gray-800 truncate">{col.name || '—'}</h3>
-                                    <span className="text-[11px] md:text-xs font-bold tabular-nums text-gray-500 bg-white border border-gray-200 rounded-full px-1.5 py-0.5">{units}</span>
-                                </header>
-                                <div className="flex-1 min-h-0 overflow-y-auto px-2 pt-3.5 pb-2">
-                                    <div className={`grid gap-2 content-start ${boxesPerRow}`}>
-                                        {col.entries.map(entry => (
-                                            <KdsBox
-                                                key={entry.key}
-                                                small
-                                                name={entry.name}
-                                                entry={entry}
-                                                options={optionsOf(menuByKey, entry.key)}
-                                                colorKey={ageColor(entry.oldest, now, config.timer)}
-                                                flag={flags[entry.key]}
-                                                onClick={() => onOpen(entry.key, entry.name)}
-                                                lang={lang}
-                                                now={now}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                            </section>
-                        );
-                    })}
+                <div className="grid flex-1 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, gridTemplateRows: 'minmax(0, 1fr)' }}>
+                    {columns.map((col, ci) => (
+                        <section key={col.id} className={`min-h-0 overflow-y-auto px-1.5 ${ci > 0 ? 'border-l-2 border-gray-300' : ''}`}>
+                            <div className="space-y-1 py-0.5">
+                                {col.entries.map(entry => (
+                                    <KdsItemRow
+                                        key={entry.key}
+                                        name={entry.name}
+                                        entry={entry}
+                                        options={optionsOf(menuByKey, entry.key)}
+                                        colorKey={ageColor(entry.oldest, now, config.timer)}
+                                        flag={flags[entry.key]}
+                                        onClick={() => onOpen(entry.key, entry.name)}
+                                        lang={lang}
+                                    />
+                                ))}
+                            </div>
+                        </section>
+                    ))}
                 </div>
             )}
         </div>

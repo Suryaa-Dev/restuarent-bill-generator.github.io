@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay } from 'lucide-react';
+import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight } from 'lucide-react';
 import { supabase } from './config/supabase';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
 import {
@@ -817,132 +817,138 @@ const BranchSelectModal = ({ lang, onSelect }) => (
 
 /* ---------------- Settings Modal ---------------- */
 
-const SettingsModal = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenHistory, onChangeBranch, onClose }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center">
-        <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl max-h-[85vh] flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
-                <h2 className="text-xl font-bold">{t('settings', lang)}</h2>
-                <button onClick={onClose}><X size={24} /></button>
-            </div>
+/* ---------------- Settings: full-screen page ---------------- */
 
-            <div className="p-4 space-y-5 overflow-y-auto">
-                {/* Language */}
-                <div>
-                    <div className="flex items-center gap-2 mb-2 text-gray-700 font-semibold">
-                        <Globe size={18} />
-                        {t('language', lang)}
-                    </div>
-                    <div className="flex gap-2">
-                        {LANGUAGES.map(l => (
-                            <button
-                                key={l.code}
-                                onClick={() => onChangeLang(l.code)}
-                                className={`flex-1 py-2 rounded-lg font-bold border ${lang === l.code
-                                    ? 'bg-orange-500 text-white border-orange-500'
-                                    : 'bg-gray-50 text-gray-700 border-gray-200'
-                                    }`}
-                            >
-                                {l.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+const SettingsSection = ({ title, children }) => (
+    <section>
+        <h2 className="px-1 mb-2 text-xs font-bold uppercase tracking-wider text-gray-500">{title}</h2>
+        <div className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">{children}</div>
+    </section>
+);
 
-                {/* Mode: Normal / Kitchen System */}
-                <div>
-                    <div className="flex items-center gap-2 mb-2 text-gray-700 font-semibold">
-                        <ChefHat size={18} />
-                        {t('appMode', lang)}
-                    </div>
-                    <div className="flex gap-2">
-                        {[['normal', 'modeNormal'], ['kitchen', 'modeKitchen']].map(([id, key]) => (
-                            <button
-                                key={id}
-                                onClick={() => onChangeMode(id)}
-                                aria-pressed={appMode === id}
-                                className={`flex-1 py-2 rounded-lg font-bold border text-sm ${appMode === id
-                                    ? 'bg-orange-500 text-white border-orange-500'
-                                    : 'bg-gray-50 text-gray-700 border-gray-200'
-                                    }`}
-                            >
-                                {t(key, lang)}
-                            </button>
-                        ))}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                        {t(appMode === 'kitchen' ? 'modeKitchenDesc' : 'modeNormalDesc', lang)}
-                    </p>
-                </div>
+const SettingsRow = ({ icon: Icon, tint, title, desc, onClick }) => (
+    <button onClick={onClick} className="w-full flex items-center gap-3 p-4 text-left active:bg-gray-50">
+        <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tint}`}><Icon size={20} /></span>
+        <span className="flex-1 min-w-0">
+            <span className="block font-semibold text-gray-900">{title}</span>
+            {desc && <span className="block text-xs text-gray-500 mt-0.5">{desc}</span>}
+        </span>
+        <ChevronRight size={18} className="text-gray-300 shrink-0" />
+    </button>
+);
 
-                {/* Kitchen-only entries */}
-                {appMode === 'kitchen' && (
-                    <>
-                        <button
-                            onClick={onOpenKitchenSettings}
-                            className="w-full flex items-center justify-between p-4 rounded-xl bg-indigo-50 border border-indigo-100 active:bg-indigo-100"
-                        >
-                            <span className="flex items-center gap-2 font-semibold text-indigo-900">
-                                <ChefHat size={18} />
-                                {t('kitchenSettings', lang)}
-                            </span>
-                            <span className="text-indigo-300">›</span>
-                        </button>
-
-                        <button
-                            onClick={onOpenKds}
-                            className="w-full flex items-center justify-between p-4 rounded-xl bg-indigo-50 border border-indigo-100 active:bg-indigo-100"
-                        >
-                            <span className="flex items-center gap-2 font-semibold text-indigo-900">
-                                <MonitorPlay size={18} />
-                                {t('openKds', lang)}
-                            </span>
-                            <span className="text-indigo-300">›</span>
-                        </button>
-                    </>
-                )}
-
-                {/* Update Menu */}
-                <button
-                    onClick={onOpenMenuManager}
-                    className="w-full flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-200 active:bg-gray-100"
-                >
-                    <span className="flex items-center gap-2 font-semibold text-gray-800">
-                        <UtensilsCrossed size={18} />
-                        {t('updateMenu', lang)}
-                    </span>
-                    <span className="text-gray-400">›</span>
-                </button>
-
-                {/* Order History */}
-                <button
-                    onClick={onOpenHistory}
-                    className="w-full flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-200 active:bg-gray-100"
-                >
-                    <span className="flex items-center gap-2 font-semibold text-gray-800">
-                        <History size={18} />
-                        {t('orderHistory', lang)}
-                    </span>
-                    <span className="text-gray-400">›</span>
-                </button>
-
-                {/* Branch */}
-                <div className="p-4 rounded-xl bg-gray-50 border border-gray-200">
-                    <p className="text-sm text-gray-500 mb-1">{t('currentBranch', lang)}</p>
-                    <p className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <Store size={18} />
-                        {branchLabel(branch, lang)}
-                    </p>
-                    <button
-                        onClick={onChangeBranch}
-                        className="w-full py-2 rounded-lg bg-orange-100 text-orange-700 font-bold"
-                    >
-                        {t('switchBranch', lang)}
-                    </button>
-                </div>
-            </div>
-        </div>
+const SettingsSegment = ({ options, value, onChange }) => (
+    <div className="flex gap-1 p-1 rounded-xl bg-gray-100">
+        {options.map(o => (
+            <button
+                key={o.id}
+                onClick={() => onChange(o.id)}
+                aria-pressed={value === o.id}
+                className={`flex-1 h-10 rounded-lg text-sm font-bold transition-colors ${value === o.id ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 active:bg-gray-200'}`}
+            >
+                {o.label}
+            </button>
+        ))}
     </div>
 );
+
+const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenHistory, onChangeBranch, onClose }) => {
+    // The phone's Back button closes the page (instead of leaving the app). Actions that
+    // leave the page (open Menu, History, KDS...) go "back" first so history stays clean.
+    const pendingRef = useRef(null);
+    useEffect(() => {
+        if (!window.history.state?.settings) window.history.pushState({ settings: 1 }, '');
+        const onPop = () => {
+            const after = pendingRef.current;
+            pendingRef.current = null;
+            onClose();
+            if (after) after();
+        };
+        window.addEventListener('popstate', onPop);
+        return () => window.removeEventListener('popstate', onPop);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    const leave = (after) => {
+        if (window.history.state?.settings) {
+            pendingRef.current = after || null;
+            window.history.back();
+        } else {
+            onClose();
+            if (after) after();
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-gray-100 overflow-y-auto">
+            {/* header: same orange bar as the billing screen */}
+            <header className="sticky top-0 z-10 bg-orange-500 text-white shadow-lg">
+                <div className="max-w-2xl mx-auto flex items-center gap-3 px-3 py-3">
+                    <button onClick={() => leave()} aria-label={t('close', lang)} className="bg-orange-600 p-2 rounded-full active:bg-orange-700">
+                        <ArrowLeft size={22} />
+                    </button>
+                    <h1 className="text-xl font-bold">{t('settings', lang)}</h1>
+                </div>
+            </header>
+
+            <div className="max-w-2xl mx-auto px-4 py-5 space-y-6 pb-12">
+                {/* General */}
+                <SettingsSection title={t('secGeneral', lang)}>
+                    <div className="p-4 space-y-3">
+                        <p className="flex items-center gap-2 font-semibold text-gray-900">
+                            <span className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><Globe size={20} /></span>
+                            {t('language', lang)}
+                        </p>
+                        <SettingsSegment
+                            options={LANGUAGES.map(l => ({ id: l.code, label: l.label }))}
+                            value={lang}
+                            onChange={onChangeLang}
+                        />
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                        <div className="flex items-center gap-3">
+                            <span className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Store size={20} /></span>
+                            <div className="min-w-0">
+                                <p className="text-xs text-gray-500">{t('currentBranch', lang)}</p>
+                                <p className="font-bold text-gray-900 truncate">{branchLabel(branch, lang)}</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => leave(onChangeBranch)}
+                            className="w-full h-11 rounded-xl border-2 border-orange-300 text-orange-700 font-bold active:bg-orange-50"
+                        >
+                            {t('switchBranch', lang)}
+                        </button>
+                    </div>
+                </SettingsSection>
+
+                {/* Mode */}
+                <SettingsSection title={t('appMode', lang)}>
+                    <div className="p-4 space-y-3">
+                        <SettingsSegment
+                            options={[{ id: 'normal', label: t('modeNormal', lang) }, { id: 'kitchen', label: t('modeKitchen', lang) }]}
+                            value={appMode}
+                            onChange={onChangeMode}
+                        />
+                        <p className="text-xs text-gray-500">{t(appMode === 'kitchen' ? 'modeKitchenDesc' : 'modeNormalDesc', lang)}</p>
+                    </div>
+                    {appMode === 'kitchen' && (
+                        <>
+                            <SettingsRow icon={ChefHat} tint="bg-indigo-50 text-indigo-600" title={t('kitchenSettings', lang)} desc={t('kitchenSettingsNote', lang)} onClick={() => leave(onOpenKitchenSettings)} />
+                            <SettingsRow icon={MonitorPlay} tint="bg-indigo-50 text-indigo-600" title={t('openKds', lang)} desc={t('kdsOpenDesc', lang)} onClick={() => leave(onOpenKds)} />
+                        </>
+                    )}
+                </SettingsSection>
+
+                {/* Menu & orders */}
+                <SettingsSection title={t('secManage', lang)}>
+                    <SettingsRow icon={UtensilsCrossed} tint="bg-orange-50 text-orange-600" title={t('updateMenu', lang)} desc={t('updateMenuDesc', lang)} onClick={() => leave(onOpenMenuManager)} />
+                    <SettingsRow icon={History} tint="bg-gray-100 text-gray-700" title={t('orderHistory', lang)} desc={t('orderHistoryDesc', lang)} onClick={() => leave(onOpenHistory)} />
+                </SettingsSection>
+            </div>
+        </div>
+    );
+};
 
 // Main App
 export default function RestaurantBillGenerator() {
@@ -2298,7 +2304,7 @@ export default function RestaurantBillGenerator() {
             )}
 
             {showSettings && (
-                <SettingsModal
+                <SettingsPage
                     lang={lang}
                     onChangeLang={handleChangeLang}
                     branch={branch}
