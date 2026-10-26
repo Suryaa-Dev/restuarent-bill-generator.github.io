@@ -35,6 +35,7 @@ import {
     analyzeBill,
     countPendingServe,
 } from './lib/kitchen';
+import { createKeyedQueue, createEchoFilter, nextStamp, tokenEcho } from './lib/billSync';
 
 
 /* ---------------- Header ---------------- */
@@ -957,29 +958,37 @@ export default function RestaurantBillGenerator() {
     // bills per table -> { tableNo: items[] }
     const [bills, setBills] = useState({});
 
-    // Always-fresh mirror of `bills`. React state updates from rapid, back-to-back
-    // taps can still be "in flight" (not yet committed) when the next tap fires, so
-    // reading `bills` directly inside addItemToBill/changeQuantity can use a stale
-    // snapshot and silently drop items. Reading/writing this ref instead guarantees
-    // each call always builds on top of the very latest bill, even mid-render.
+    // Always-fresh mirror of `bills`. React state updates from rapid, back-to-back taps can
+    // still be "in flight" (not yet committed) when the next tap fires, so every change goes
+    // through commitBills(): it updates this ref SYNCHRONOUSLY (the very next tap builds on
+    // it) and then the on-screen state. Nothing may overwrite the ref from a stale render
+    // snapshot any more (that used to roll the bill back during bursts of taps).
     const billsRef = useRef({});
-    useEffect(() => {
-        billsRef.current = bills;
-    }, [bills]);
-
-    // Per-table save queue so Supabase writes for the same table always run one at a
-    // time, in order. Without this, two overlapping saves (fired from quick taps)
-    // can resolve out of order over the network and the earlier (smaller) item list
-    // can overwrite the later one in the database.
-    const saveQueueRef = useRef({});
-    const enqueueSave = (tableNumber, items, addToQueue = true) => {
-        const prevInQueue = saveQueueRef.current[tableNumber] || Promise.resolve();
-        const nextInQueue = prevInQueue
-            .catch(() => { }) // don't let one failed save break the chain for this table
-            .then(() => saveBillToSupabase(tableNumber, items, addToQueue));
-        saveQueueRef.current[tableNumber] = nextInQueue;
-        return nextInQueue;
+    const commitBills = (next) => {
+        const value = typeof next === 'function' ? next(billsRef.current) : next;
+        billsRef.current = value;
+        setBills(value);
     };
+
+    // ---- rush-hour safe saving (see lib/billSync.js for the full story) ----
+    // 1. saves for one table run one at a time AND coalesce: 6 quick taps = 2 writes, not 6
+    // 2. each save is stamped (`version`); when that stamp comes back through realtime it is
+    //    our own echo and is ignored, so old snapshots can never overwrite newer taps
+    const billEchoRef = useRef(createEchoFilter());
+    const billRowIdRef = useRef({});   // table -> id of its active bill row (skips a lookup per save)
+    const saveBillRef = useRef(null);  // always the latest saveBillToSupabase (branch etc. never stale)
+    const saveQueueRef = useRef(null);
+    if (!saveQueueRef.current) {
+        saveQueueRef.current = createKeyedQueue((table, p) => saveBillRef.current(Number(table), p.items, p.addToQueue));
+    }
+    const enqueueSave = (tableNumber, items, addToQueue = true) =>
+        saveQueueRef.current.enqueue(String(tableNumber), { items, addToQueue });
+
+    // token edits (Serve / Cancel / Update) get the same treatment: rapid Serve taps are merged
+    const tokenQueueRef = useRef(null);
+    if (!tokenQueueRef.current) {
+        tokenQueueRef.current = createKeyedQueue((id, patch) => patchToken(id, patch), (a, b) => ({ ...a, ...b }));
+    }
 
     // active table for ordering
     const [selectedTable, setSelectedTable] = useState(null);
@@ -1103,7 +1112,11 @@ export default function RestaurantBillGenerator() {
                         if (id) updateTokens(list => list.filter(x => x.id !== id));
                         return;
                     }
-                    if (payload.new) upsertToken(normalizeToken(payload.new));
+                    if (!payload.new) return;
+                    const tk = normalizeToken(payload.new);
+                    if (tokenEcho.isOwn(tk.id, Date.parse(tk.updatedAt))) return; // our own write coming back
+                    if (tokenQueueRef.current.busy(tk.id)) return;                // our newer local edit wins
+                    upsertToken(tk);
                 }
             )
             .subscribe();
@@ -1222,29 +1235,29 @@ export default function RestaurantBillGenerator() {
                     filter: `branch=eq.${branch}`
                 },
                 (payload) => {
-                    console.log('📡 REALTIME PAYLOAD:', payload);
-
                     const row = payload.new || payload.old;
                     if (!row || !row.table_number) return;
+                    const table = row.table_number;
 
-                    // A bill going to any non-active status (cleared, etc.) means the
-                    // table is now empty — reflect that immediately on every device
-                    // instead of ignoring the event, which was leaving stale items
-                    // showing elsewhere after a bill was cleared.
+                    // A bill going to any non-active status (cleared, etc.) means the table is
+                    // now empty — reflect that on every device. Our own Clear Bill coming back
+                    // is ignored (the screen is already empty, and a late echo must not wipe a
+                    // brand-new order started on that table straight afterwards).
                     if (row.status && row.status !== 'active') {
-                        setBills(prev => ({
-                            ...prev,
-                            [row.table_number]: []
-                        }));
-                        setParcelsBoth({ ...parcelsRef.current, [row.table_number]: false });
+                        if (billEchoRef.current.consumeClear(String(table))) return;
+                        commitBills(prev => ({ ...prev, [table]: [] }));
+                        setParcelsBoth({ ...parcelsRef.current, [table]: false });
                         return;
                     }
 
-                    setBills(prev => ({
-                        ...prev,
-                        [row.table_number]: row.items || []
-                    }));
-                    setParcelsBoth({ ...parcelsRef.current, [row.table_number]: !!row.is_parcel });
+                    // our own save echoing back (older than what is on screen): ignore it
+                    if (billEchoRef.current.isOwn(String(table), Number(row.version))) return;
+                    // another device changed this table while we still have saves in flight:
+                    // our newer edits win; they are written right after, so nothing is lost
+                    if (saveQueueRef.current.busy(String(table))) return;
+
+                    commitBills(prev => ({ ...prev, [table]: row.items || [] }));
+                    setParcelsBoth({ ...parcelsRef.current, [table]: !!row.is_parcel });
                 }
             )
             .subscribe((status) => {
@@ -1311,13 +1324,13 @@ export default function RestaurantBillGenerator() {
             });
 
             console.log('📊 Final bills state:', loadedBills);
-            setBills(loadedBills);
+            commitBills(loadedBills);
             setParcelsBoth(loadedParcels);
         } catch (error) {
             console.error('Error loading bills:', error);
             const initialBills = {};
             tables.forEach(num => { initialBills[num] = []; });
-            setBills(initialBills);
+            commitBills(initialBills);
         } finally {
             setLoading(false);
         }
@@ -1325,81 +1338,66 @@ export default function RestaurantBillGenerator() {
 
     const saveBillToSupabase = async (tableNumber, items, addToQueue = true) => {
         try {
-            console.log('💾 Saving to Supabase:', { tableNumber, itemCount: items.length, items });
-
             const total = items.reduce((sum, item) => sum + item.price * item.qty, 0);
 
-            // Use limit(1) to handle multiple rows gracefully
-            const { data: existingRows, error: selectError } = await supabase
-                .from('bills')
-                .select('id')
-                .eq('table_number', tableNumber)
-                .eq('status', 'active')
-                .eq('branch', branch)
-                .limit(1);
+            // Stamp this write BEFORE sending it; when the stamp shows up again through realtime
+            // we know it is our own echo (see lib/billSync.js).
+            const version = nextStamp();
+            billEchoRef.current.remember(String(tableNumber), version);
 
-            if (selectError) {
-                console.error('❌ Select error:', selectError);
-                throw selectError;
-            }
+            const payload = {
+                items,
+                total,
+                is_parcel: !!parcelsRef.current[tableNumber],
+                updated_at: new Date().toISOString(),
+                version
+            };
 
-            const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
-
-            if (existing) {
-                console.log('🔄 Updating existing bill:', existing.id, 'with', items.length, 'items');
-
-                const nextVersion = Date.now();
-
+            // Fast path: we already know this table's active bill row — one request, no lookup.
+            let saved = false;
+            const knownId = billRowIdRef.current[tableNumber];
+            if (knownId) {
                 const { data, error } = await supabase
                     .from('bills')
-                    .update({
-                        items,
-                        total,
-                        is_parcel: !!parcelsRef.current[tableNumber],
-                        updated_at: new Date().toISOString(),
-                        version: nextVersion
-                    })
-                    .eq('id', existing.id)
-                    .select();
-
-                if (error) {
-                    console.error('❌ Update error:', error);
-                    throw error;
-                }
-                console.log('✅ Update successful, returned data:', data);
-            } else {
-                console.log('➕ Creating new bill with', items.length, 'items');
-
-                const { data, error } = await supabase
-                    .from('bills')
-                    .insert({
-                        table_number: tableNumber,
-                        items,
-                        total,
-                        is_parcel: !!parcelsRef.current[tableNumber],
-                        status: 'active',
-                        branch,
-                        version: Date.now()
-                    })
-
-
-                    .select();
-
-                if (error) {
-                    console.error('❌ Insert error:', error);
-                    throw error;
-                }
-                console.log('✅ Insert successful, returned data:', data);
+                    .update(payload)
+                    .eq('id', knownId)
+                    .eq('status', 'active')
+                    .select('id');
+                if (error) throw error;
+                if (data && data.length > 0) saved = true;
+                else delete billRowIdRef.current[tableNumber]; // it was cleared meanwhile: look again
             }
 
-            // Add a small delay to ensure database commit before real-time triggers
-            await new Promise(resolve => setTimeout(resolve, 100));
+            if (!saved) {
+                // Use limit(1) to handle multiple rows gracefully
+                const { data: existingRows, error: selectError } = await supabase
+                    .from('bills')
+                    .select('id')
+                    .eq('table_number', tableNumber)
+                    .eq('status', 'active')
+                    .eq('branch', branch)
+                    .limit(1);
+                if (selectError) throw selectError;
 
+                const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+                if (existing) {
+                    const { error } = await supabase.from('bills').update(payload).eq('id', existing.id);
+                    if (error) throw error;
+                    billRowIdRef.current[tableNumber] = existing.id;
+                } else {
+                    const { data, error } = await supabase
+                        .from('bills')
+                        .insert({ ...payload, table_number: tableNumber, status: 'active', branch })
+                        .select('id');
+                    if (error) throw error;
+                    if (data && data[0]) billRowIdRef.current[tableNumber] = data[0].id;
+                }
+            }
         } catch (error) {
             console.error('❌ Save failed:', error);
 
             // 🔁 Likely SW update / temporary offline
-            if (!navigator.onLine || error.message.includes('Failed to fetch')) {
+            if (!navigator.onLine || (error.message || '').includes('Failed to fetch')) {
                 setPendingSaves(prev => [...prev, { tableNumber, items }]);
                 console.log('📦 Queued due to SW update / offline');
                 return;
@@ -1407,8 +1405,8 @@ export default function RestaurantBillGenerator() {
 
             alert('Failed to save bill. Please try again.');
         }
-
     };
+    saveBillRef.current = saveBillToSupabase;
 
     // Customer-facing menu: items switched off in Update Menu are not shown
     const mergedMenuItems = useMemo(() => menuItems.filter(item => !item.isHidden), [menuItems]);
@@ -1620,6 +1618,13 @@ export default function RestaurantBillGenerator() {
 
                 if (insertError) throw insertError;
 
+                // let any in-flight saves for this table finish first, so none can land AFTER the
+                // clear and bring the bill back to life; then remember the clear so its realtime
+                // echo is recognised as ours
+                await saveQueueRef.current.whenIdle(String(tableToUpdate));
+                billEchoRef.current.rememberClear(String(tableToUpdate));
+                delete billRowIdRef.current[tableToUpdate];
+
                 // mark active bill as cleared
                 const { error: updateError } = await supabase
                     .from('bills')
@@ -1631,8 +1636,7 @@ export default function RestaurantBillGenerator() {
                 if (updateError) throw updateError;
 
                 // reset local state
-                billsRef.current = { ...billsRef.current, [tableToUpdate]: [] };
-                setBills(prev => ({ ...prev, [tableToUpdate]: [] }));
+                commitBills(prev => ({ ...prev, [tableToUpdate]: [] }));
                 setParcelsBoth({ ...parcelsRef.current, [tableToUpdate]: false });
                 setShowCartDrawer(false);
                 setViewingTableFromAllTables(null);
@@ -1857,6 +1861,7 @@ export default function RestaurantBillGenerator() {
                     .map(({ isParcel, ...rest }) => rest); // eslint-disable-line no-unused-vars
                 if (group.length === 0) continue;
                 const created = await createToken({ branch, table, items: group, isParcel: parcelGroup, existing });
+                tokenEcho.remember(created.id, Date.parse(created.updatedAt)); // ignore its own INSERT echo
                 upsertToken(created);
                 existing = [...existing, created];
             }
@@ -1893,7 +1898,7 @@ export default function RestaurantBillGenerator() {
         const nextItems = makeItems(prevItems);
         upsertToken({ ...tk, items: nextItems }); // optimistic
         try {
-            await patchToken(tokenId, { items: nextItems });
+            await tokenQueueRef.current.enqueue(tokenId, { items: nextItems });
         } catch (err) {
             console.error('Serve toggle failed:', err);
             upsertToken({ ...tk, items: prevItems }); // roll back
@@ -1929,7 +1934,7 @@ export default function RestaurantBillGenerator() {
         const tk = cancelTarget;
         if (!tk) return;
         try {
-            const saved = await patchToken(tk.id, { status: 'cancelled' });
+            const saved = await tokenQueueRef.current.enqueue(tk.id, { status: 'cancelled' });
             upsertToken(saved);
             if (removeFromBill) {
                 // served items were eaten — they stay on the bill; everything else goes
@@ -1948,7 +1953,7 @@ export default function RestaurantBillGenerator() {
     const handleSaveTokenUpdate = async (newItems, deltas) => {
         const tk = updateTarget;
         if (!tk) return;
-        const saved = await patchToken(tk.id, { items: newItems, revision: (tk.revision || 0) + 1 });
+        const saved = await tokenQueueRef.current.enqueue(tk.id, { items: newItems, revision: (tk.revision || 0) + 1 });
         upsertToken(saved);
         if (deltas.length) await applyBillDelta(tk.tableNumber, deltas);
         setUpdateTarget(null);
@@ -2047,7 +2052,9 @@ export default function RestaurantBillGenerator() {
         // reset local, per-branch UI state so we don't show stale data from another branch
         setSelectedTable(null);
         localStorage.removeItem('selectedTable');
-        setBills({});
+        commitBills({});
+        billRowIdRef.current = {};
+        billEchoRef.current.reset();
         setParcelsBoth({});
         updateTokens(() => []);
     };

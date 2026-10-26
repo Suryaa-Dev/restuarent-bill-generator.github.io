@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { nextStamp, tokenEcho } from './billSync';
 
 /* =====================================================================
    Kitchen System (KOT) — data layer + pure helpers
@@ -186,9 +187,12 @@ export async function createToken({ branch, table, items, isParcel, existing }) 
 
 // patch uses DB column names, e.g. { items, status, revision, is_parcel }
 export async function patchToken(id, patch) {
+    // stamp the write so its realtime echo can be recognised and ignored (lib/billSync.js)
+    const stamp = nextStamp();
+    tokenEcho.remember(id, stamp);
     const { data, error } = await supabase
         .from(TOKENS)
-        .update({ ...patch, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date(stamp).toISOString() })
         .eq('id', id)
         .select()
         .single();

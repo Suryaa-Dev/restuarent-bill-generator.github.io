@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, X, Search, Calendar, IndianRupee, RefreshCw, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, X, Search, Calendar, IndianRupee, RefreshCw, ShoppingBag, Trash2, CheckSquare, Square, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { getSavedBranch, branchLabel, getSavedLanguage } from '../lib/branchMenu';
 import { translateItemName, translatePortion } from '../i18n/translations';
@@ -29,6 +29,14 @@ export default function OrderHistory() {
     const [typeFilter, setTypeFilter] = useState('all'); // all | parcel | dinein
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [showFilters, setShowFilters] = useState(false);
+
+    // deleting unwanted bills (so they drop out of history AND every report)
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState(() => new Set());
+    const [confirmDelete, setConfirmDelete] = useState(null); // { ids, count, total }
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
+    const [notice, setNotice] = useState('');
 
     useEffect(() => {
         fetchBills();
@@ -89,8 +97,73 @@ export default function OrderHistory() {
         setTypeFilter('all');
     };
 
+    const itemsPreview = (bill) => {
+        const names = (bill.items || []).map(i => translateItemName(i.name, lang));
+        if (names.length === 0) return '';
+        const shown = names.slice(0, 2).join(', ');
+        return names.length > 2 ? `${shown} +${names.length - 2}` : shown;
+    };
+
+    // ---- selecting / deleting ----
+    const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
+    const toggleSelected = (id) => setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+    });
+    const allShownSelected = filteredBills.length > 0 && filteredBills.every(b => selectedIds.has(b.id));
+    const toggleSelectAll = () => setSelectedIds(allShownSelected ? new Set() : new Set(filteredBills.map(b => b.id)));
+    const selectedTotal = filteredBills.filter(b => selectedIds.has(b.id)).reduce((s, b) => s + (Number(b.total) || 0), 0);
+
+    const askDelete = (billList) => {
+        setDeleteError('');
+        setConfirmDelete({
+            ids: billList.map(b => b.id),
+            count: billList.length,
+            total: billList.reduce((s, b) => s + (Number(b.total) || 0), 0),
+        });
+    };
+
+    const runDelete = async () => {
+        if (!confirmDelete) return;
+        setDeleting(true);
+        setDeleteError('');
+        try {
+            const deleted = new Set();
+            for (let i = 0; i < confirmDelete.ids.length; i += 50) { // small batches keep the request short
+                const { data, error } = await supabase
+                    .from('completed_bills')
+                    .delete()
+                    .in('id', confirmDelete.ids.slice(i, i + 50))
+                    .eq('branch', branch)
+                    .select('id');
+                if (error) throw error;
+                (data || []).forEach(r => deleted.add(r.id));
+            }
+            // a blocked delete (database permissions) removes nothing and returns no error
+            if (deleted.size === 0) throw new Error('nothing-deleted');
+
+            setBills(prev => prev.filter(b => !deleted.has(b.id)));
+            setSelectedBill(null);
+            setSelectedIds(new Set());
+            setSelectMode(false);
+            setConfirmDelete(null);
+            const n = deleted.size;
+            const partial = n < confirmDelete.count ? ` (${confirmDelete.count - n} could not be deleted)` : '';
+            setNotice(`${n} bill${n === 1 ? '' : 's'} deleted${partial}`);
+            setTimeout(() => setNotice(''), 4000);
+        } catch (err) {
+            console.error('Error deleting bills:', err);
+            setDeleteError(err.message === 'nothing-deleted'
+                ? 'The database did not allow the delete. Run supabase/04_delete_completed_bills.sql once, then try again.'
+                : 'Could not delete. Check your connection and try again.');
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className={`min-h-screen bg-gray-50 ${selectMode ? 'pb-28' : ''}`}>
             {/* Header */}
             <header className="sticky top-0 z-30 bg-orange-500 text-white px-4 py-3 shadow-lg">
                 <div className="flex items-center justify-between max-w-3xl mx-auto">
@@ -103,9 +176,26 @@ export default function OrderHistory() {
                             <p className="text-xs text-orange-100">{branchLabel(branch, lang)}</p>
                         </div>
                     </div>
-                    <button onClick={fetchBills} className="p-2 bg-orange-600 rounded-full">
-                        <RefreshCw size={18} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {selectMode ? (
+                            <button onClick={exitSelectMode} className="px-3 py-2 bg-orange-600 rounded-full text-sm font-semibold flex items-center gap-1">
+                                <X size={16} /> Cancel
+                            </button>
+                        ) : (
+                            <>
+                                <button
+                                    onClick={() => setSelectMode(true)}
+                                    disabled={filteredBills.length === 0}
+                                    className="px-3 py-2 bg-orange-600 rounded-full text-sm font-semibold flex items-center gap-1 disabled:opacity-50"
+                                >
+                                    <CheckSquare size={16} /> Select
+                                </button>
+                                <button onClick={fetchBills} className="p-2 bg-orange-600 rounded-full" aria-label="Refresh">
+                                    <RefreshCw size={18} />
+                                </button>
+                            </>
+                        )}
+                    </div>
                 </div>
             </header>
 
@@ -241,33 +331,44 @@ export default function OrderHistory() {
                         <p className="text-xs text-gray-400 px-1">
                             {filteredBills.length} bill{filteredBills.length === 1 ? '' : 's'}
                         </p>
-                        {filteredBills.slice(0, visibleCount).map(bill => (
-                            <button
-                                key={bill.id}
-                                onClick={() => setSelectedBill(bill)}
-                                className="w-full bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between text-left active:bg-gray-50"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-11 h-11 rounded-full bg-orange-100 text-orange-700 font-bold flex items-center justify-center text-sm">
-                                        T{bill.table_number}
-                                    </div>
-                                    <div>
-                                        <p className="font-semibold text-gray-800">
-                                            {formatDateLabel(bill.completed_at)} · {formatTimeLabel(bill.completed_at)}
-                                        </p>
-                                        <p className="text-xs text-gray-400 flex items-center gap-2">
-                                            <span>{(bill.items || []).length} item{(bill.items || []).length === 1 ? '' : 's'}</span>
+                        {filteredBills.slice(0, visibleCount).map(bill => {
+                            const picked = selectedIds.has(bill.id);
+                            return (
+                                <button
+                                    key={bill.id}
+                                    onClick={() => (selectMode ? toggleSelected(bill.id) : setSelectedBill(bill))}
+                                    className={`w-full bg-white rounded-xl border p-4 flex items-center justify-between gap-3 text-left active:bg-gray-50 ${picked ? 'border-orange-400 ring-1 ring-orange-300' : 'border-gray-200'}`}
+                                >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        {selectMode ? (
+                                            <span className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${picked ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-300'}`}>
+                                                {picked ? <Check size={22} /> : <Square size={20} />}
+                                            </span>
+                                        ) : (
+                                            <div className="w-11 h-11 rounded-full bg-orange-100 text-orange-700 font-bold flex items-center justify-center text-sm shrink-0">
+                                                T{bill.table_number}
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <p className="font-semibold text-gray-800">
+                                                {selectMode && <span className="text-orange-600 mr-1">T{bill.table_number} ·</span>}
+                                                {formatDateLabel(bill.completed_at)} · {formatTimeLabel(bill.completed_at)}
+                                            </p>
+                                            <p className="text-xs text-gray-500 truncate">
+                                                {(bill.items || []).length} item{(bill.items || []).length === 1 ? '' : 's'}
+                                                {itemsPreview(bill) && <span className="text-gray-400"> · {itemsPreview(bill)}</span>}
+                                            </p>
                                             {bill.is_parcel && (
-                                                <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 font-semibold rounded-full px-2 py-0.5">
+                                                <span className="inline-flex items-center gap-1 mt-1 bg-purple-100 text-purple-700 text-[11px] font-semibold rounded-full px-2 py-0.5">
                                                     <ShoppingBag size={10} /> Parcel
                                                 </span>
                                             )}
-                                        </p>
+                                        </div>
                                     </div>
-                                </div>
-                                <p className="text-lg font-bold text-orange-600">₹{bill.total}</p>
-                            </button>
-                        ))}
+                                    <p className="text-lg font-bold text-orange-600 shrink-0">₹{bill.total}</p>
+                                </button>
+                            );
+                        })}
 
                         {filteredBills.length > visibleCount && (
                             <button
@@ -319,12 +420,86 @@ export default function OrderHistory() {
                             ))}
                         </div>
 
-                        <div className="border-t p-4">
+                        <div className="border-t p-4 space-y-3">
                             <div className="flex justify-between font-bold text-lg">
                                 <span>Total</span>
                                 <span className="text-orange-600">₹{selectedBill.total}</span>
                             </div>
+                            <button
+                                onClick={() => askDelete([selectedBill])}
+                                className="w-full h-11 rounded-xl border-2 border-red-200 text-red-600 font-bold flex items-center justify-center gap-2 active:bg-red-50"
+                            >
+                                <Trash2 size={18} /> Delete this bill
+                            </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* select mode: bottom action bar */}
+            {selectMode && (
+                <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+                    <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+                        <button onClick={toggleSelectAll} className="flex items-center gap-2 text-sm font-semibold text-gray-700 shrink-0">
+                            {allShownSelected ? <CheckSquare size={20} className="text-orange-500" /> : <Square size={20} className="text-gray-400" />}
+                            All
+                        </button>
+                        <p className="flex-1 min-w-0 text-sm text-gray-600 truncate">
+                            <span className="font-bold text-gray-900">{selectedIds.size}</span> selected
+                            {selectedIds.size > 0 && <span> · ₹{selectedTotal}</span>}
+                        </p>
+                        <button
+                            onClick={() => askDelete(filteredBills.filter(b => selectedIds.has(b.id)))}
+                            disabled={selectedIds.size === 0}
+                            className="h-11 px-5 rounded-xl bg-red-600 text-white font-bold flex items-center gap-2 disabled:opacity-40 active:bg-red-700"
+                        >
+                            <Trash2 size={18} /> Delete
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* confirm delete */}
+            {confirmDelete && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-end md:items-center justify-center">
+                    <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl p-5 space-y-4">
+                        <div className="flex items-start gap-3">
+                            <span className="w-11 h-11 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0"><Trash2 size={22} /></span>
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900">
+                                    Delete {confirmDelete.count} bill{confirmDelete.count === 1 ? '' : 's'}?
+                                </h2>
+                                <p className="text-sm text-gray-600 mt-0.5">
+                                    Worth <span className="font-bold text-gray-900">₹{confirmDelete.total}</span>. They will be removed from order history and from all reports, and this cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+                        {deleteError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{deleteError}</p>}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setConfirmDelete(null); setDeleteError(''); }}
+                                disabled={deleting}
+                                className="flex-1 h-12 rounded-xl bg-gray-100 text-gray-700 font-bold"
+                            >
+                                Keep
+                            </button>
+                            <button
+                                onClick={runDelete}
+                                disabled={deleting}
+                                className="flex-1 h-12 rounded-xl bg-red-600 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+                            >
+                                {deleting && <Loader2 size={18} className="animate-spin" />} Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* result message */}
+            {notice && (
+                <div className="fixed top-20 inset-x-0 z-[70] flex justify-center px-4 pointer-events-none">
+                    <div className="bg-gray-900 text-white text-sm font-semibold rounded-full px-5 py-3 shadow-lg flex items-center gap-2">
+                        <Check size={16} className="text-green-400" /> {notice}
                     </div>
                 </div>
             )}
