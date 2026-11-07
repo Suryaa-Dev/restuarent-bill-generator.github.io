@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChefHat, Settings, X, Volume2, VolumeX, Maximize, RotateCw, Check, Play } from 'lucide-react';
-import { t } from '../i18n/translations';
+import { ArrowLeft, ChefHat, Settings, X, Volume2, VolumeX, Maximize, RotateCw, Check, Play, Undo2 } from 'lucide-react';
+import { t, translateItemName } from '../i18n/translations';
+import { tx } from '../i18n/kdsExtra';
 import { getSavedLanguage } from '../lib/branchMenu';
 import { useKdsData } from '../lib/useKdsData';
+import { useKdsNotify } from '../lib/useKdsNotify';
 import {
     FLAG_TTL_MS,
     aggregate,
+    describeEvents,
     diffEvents,
     normalizeConfig,
     pendingLines,
@@ -15,6 +18,7 @@ import { isSoundOn, playCancelled, playNewOrder, setSoundOn, unlockAudio } from 
 import AllTab from '../components/kds/AllTab';
 import ItemPage from '../components/kds/ItemPage';
 import TokenTab from '../components/kds/TokenTab';
+import { NotifyBanner, NotifyPanel } from '../components/kds/NotifyPanel';
 
 const KITCHEN_KEY = 'restaurant_kds_kitchen';
 
@@ -60,7 +64,7 @@ function usePortraitPhone() {
 
 /* ---------- settings sheet ---------- */
 
-function KdsSettings({ lang, kitchens, kitchenId, onKitchen, sound, onSound, onBack, onClose }) {
+function KdsSettings({ lang, kitchens, kitchenId, onKitchen, sound, onSound, notify, onBack, onClose }) {
     return (
         <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-3" onClick={onClose}>
             <div className="bg-white w-full max-w-md max-h-full overflow-y-auto rounded-2xl" onClick={(e) => e.stopPropagation()}>
@@ -106,6 +110,8 @@ function KdsSettings({ lang, kitchens, kitchenId, onKitchen, sound, onSound, onB
                         </div>
                     )}
 
+                    {notify && <NotifyPanel lang={lang} notify={notify} />}
+
                     <button onClick={onBack} className="w-full py-3 rounded-xl bg-orange-500 text-white font-bold flex items-center justify-center gap-2">
                         <ArrowLeft size={18} /> {t('backToApp', lang)}
                     </button>
@@ -117,7 +123,7 @@ function KdsSettings({ lang, kitchens, kitchenId, onKitchen, sound, onSound, onB
 
 /* ---------- the display itself (pure: all data comes in as props) ---------- */
 
-export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItems, onBack, initial }) {
+export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItems, onBack, initial, onServe, notify }) {
     const kitchen = kitchens.find(k => k.id === kitchenId) || null;
     const config = useMemo(() => normalizeConfig(kitchen?.kdsConfig), [kitchen]);
 
@@ -171,6 +177,8 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
             const upKeys = Object.keys(up);
             const downKeys = Object.keys(down);
             if (upKeys.length || downKeys.length) {
+                // app in the background (chef is in another app)? -> system notification
+                if (notify) notify.notifyEvents(describeEvents(prev.tokens, tokens, kitchenId));
                 const at = Date.now();
                 setFlags(old => {
                     const next = { ...old };
@@ -191,7 +199,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
             setFlags({}); // switching kitchen: start clean, no alerts
         }
         prevRef.current = { tokens, kitchenId };
-    }, [tokens, kitchenId]);
+    }, [tokens, kitchenId]); // eslint-disable-line react-hooks/exhaustive-deps -- `notify` is read fresh on purpose
 
     // arrows fade after a minute
     const liveFlags = useMemo(() => {
@@ -215,6 +223,32 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
         if (selected && window.history.state?.kds) window.history.back();
         setSelected(null);
         setTab(id);
+    };
+
+    // ---- serve on behalf of the waiter (Table / Parcel tabs) with a short Undo ----
+    const [toast, setToast] = useState(null); // { tokenId, idx, name, tokenNo, id }
+    useEffect(() => {
+        if (!toast) return undefined;
+        const id = setTimeout(() => setToast(null), 6000);
+        return () => clearTimeout(id);
+    }, [toast]);
+    const serve = (tokenId, idx) => {
+        if (!onServe) return;
+        const tk = tokens.find(x => x.id === tokenId);
+        const it = tk?.items?.[idx];
+        if (!it) return;
+        setToast({ tokenId, idx, name: it.name, tokenNo: tk.tokenNo, id: Date.now() });
+        Promise.resolve(onServe(tokenId, idx, true)).then(ok => {
+            if (ok === false) { setToast(null); alert(t('tokenSaveFailed', lang)); }
+        });
+    };
+    const undoServe = () => {
+        if (!toast || !onServe) return;
+        const { tokenId, idx } = toast;
+        setToast(null);
+        Promise.resolve(onServe(tokenId, idx, false)).then(ok => {
+            if (ok === false) alert(t('tokenSaveFailed', lang));
+        });
     };
 
     const switchKitchen = (id) => {
@@ -263,6 +297,8 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                 </div>
             </header>
 
+            {notify?.showBanner && <NotifyBanner lang={lang} notify={notify} />}
+
             {!kitchen ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-400 p-8">
                     <ChefHat size={48} className="mb-3 opacity-50" />
@@ -276,7 +312,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                     ) : tab === 'all' ? (
                         <AllTab config={config} agg={agg} menuByKey={menuByKey} flags={liveFlags} now={now} lang={lang} onOpen={openItem} />
                     ) : (
-                        <TokenTab mode={tab} lines={lines} kitchenId={kitchenId} now={now} timer={config.timer} lang={lang} />
+                        <TokenTab mode={tab} lines={lines} kitchenId={kitchenId} now={now} timer={config.timer} lang={lang} onServe={onServe ? serve : undefined} />
                     )}
                 </main>
             )}
@@ -289,9 +325,22 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                     onKitchen={switchKitchen}
                     sound={sound}
                     onSound={(on) => { setSoundOn(on); setSound(on); if (on) unlockAudio(); }}
+                    notify={notify}
                     onBack={onBack}
                     onClose={() => setShowSettings(false)}
                 />
+            )}
+
+            {toast && (
+                <div key={toast.id} className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] max-w-[92vw] bg-gray-900 text-white rounded-full pl-4 pr-1.5 py-1.5 flex items-center gap-3 shadow-xl">
+                    <Check size={18} className="text-green-400 shrink-0" />
+                    <span className="text-sm font-semibold truncate">
+                        {tx('servedToast', lang)} · #{toast.tokenNo} · {translateItemName(toast.name, lang)}
+                    </span>
+                    <button onClick={undoServe} className="h-9 px-3.5 rounded-full bg-white/15 text-sm font-bold flex items-center gap-1.5 shrink-0 active:bg-white/25">
+                        <Undo2 size={15} /> {t('undo', lang)}
+                    </button>
+                </div>
             )}
         </div>
     );
@@ -302,8 +351,9 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
 export default function KitchenDisplay() {
     const navigate = useNavigate();
     const lang = getSavedLanguage();
-    const { branch, kitchens, tokens, menuItems, ready, error } = useKdsData();
+    const { branch, kitchens, tokens, menuItems, ready, error, serveItem } = useKdsData();
     const [kitchenId, setKitchenId] = useState(() => localStorage.getItem(KITCHEN_KEY));
+    const notify = useKdsNotify({ branch, kitchenId, lang });
 
     useEffect(() => { if (!branch) navigate('/', { replace: true }); }, [branch, navigate]);
 
@@ -331,6 +381,8 @@ export default function KitchenDisplay() {
             onKitchen={setKitchenId}
             tokens={tokens}
             menuItems={menuItems}
+            onServe={serveItem}
+            notify={notify}
             onBack={() => navigate('/')}
         />
     );

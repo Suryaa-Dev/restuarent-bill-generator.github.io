@@ -1,6 +1,7 @@
 import React from 'react';
 import { Check, ShoppingBag } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../i18n/translations';
+import { tx } from '../../i18n/kdsExtra';
 import { BORDER, ageColor } from '../../lib/kds';
 import { AgeText } from './KdsBox';
 
@@ -10,15 +11,18 @@ const fmtTime = (iso) => new Date(iso).toLocaleTimeString('en-IN', {
 
 // tell the kitchen when a line was changed after the token was fired
 const changeNote = (it, lang) => {
+    if (it.change === 'renewed') return tx('itemRenewed', lang);
     if (it.change === 'replaced') return `${t('itemReplaced', lang)}${it.replacedFrom ? ` · ${t('replacedFrom', lang)} ${it.replacedFrom}` : ''}`;
     if (it.change === 'added') return t('itemNew', lang);
     if (it.change === 'qty' && it.prevQty != null) return `${t('itemQtyChanged', lang)} ${it.prevQty}→${it.qty}`;
     return null;
 };
 
-/*  lines: [{ item, pending }]  — only the lines to show.
-    isBold(item) lets a caller emphasise the selected item / category.      */
-export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold, lang }) {
+/*  lines: [{ item, pending, idx }]  — only the lines to show (idx = position in token.items).
+    isBold(item) lets a caller emphasise the selected item / category.
+    onServe(idx) — optional. When given, every pending line gets a [Serve] button so the chef can
+    mark it served on behalf of a waiter who forgot.                                          */
+export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold, onServe, lang }) {
     const color = ageColor(oldest, now, timer);
     return (
         <div className={`rounded-2xl border-2 bg-white overflow-hidden shadow-sm ${BORDER[color]}`}>
@@ -40,7 +44,7 @@ export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold,
 
             {/* item · qty · portion */}
             <div className="divide-y divide-gray-100">
-                {lines.map(({ item: it, pending }, i) => {
+                {lines.map(({ item: it, pending, idx }, i) => {
                     const bold = isBold ? isBold(it) : false;
                     const note = pending ? changeNote(it, lang) : null;
                     return (
@@ -51,9 +55,18 @@ export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold,
                                 </span>
                                 <span className="w-9 text-center shrink-0 text-xl font-extrabold tabular-nums text-gray-900">{it.qty}</span>
                                 <span className={`w-14 shrink-0 text-sm ${bold ? 'font-bold text-gray-800' : 'font-medium text-gray-500'}`}>{translatePortion(it.portion, lang)}</span>
-                                {!pending && <Check size={16} className="text-green-600 shrink-0" />}
+                                {onServe && pending && idx != null ? (
+                                    <button
+                                        onClick={() => onServe(idx)}
+                                        className="w-[68px] h-10 shrink-0 rounded-xl bg-orange-500 text-white text-sm font-bold active:bg-orange-600"
+                                    >
+                                        {t('serve', lang)}
+                                    </button>
+                                ) : (
+                                    !pending && <Check size={16} className="text-green-600 shrink-0" />
+                                )}
                             </div>
-                            {note && <p className="text-xs font-semibold text-amber-700 mt-0.5">{note}</p>}
+                            {note && <p className={`text-xs font-semibold mt-0.5 ${it.change === 'renewed' ? 'text-red-600' : 'text-amber-700'}`}>{note}</p>}
                         </div>
                     );
                 })}

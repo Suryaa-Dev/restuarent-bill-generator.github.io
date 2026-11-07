@@ -6,7 +6,7 @@ const colsFor = (w) => (w >= 1280 ? 4 : w >= 1024 ? 3 : 2);
 const byAge = (a, b) => a.token.createdAt.localeCompare(b.token.createdAt) || a.token.seq - b.token.seq;
 
 // Table tab and Parcel tab share this: same layout, different token set
-export default function TokenTab({ mode, lines, kitchenId, now, timer, lang }) {
+export default function TokenTab({ mode, lines, kitchenId, now, timer, lang, onServe }) {
     const [cat, setCat] = useState(null);
 
     // tokens of this mode that still have something pending in this kitchen
@@ -76,8 +76,8 @@ export default function TokenTab({ mode, lines, kitchenId, now, timer, lang }) {
                             <div key={ci} className="flex-1 min-w-0 space-y-3">
                                 {col.map(g => {
                                     const shown = g.token.items
-                                        .filter(it => it.kitchenId === kitchenId && !it.removed)
-                                        .map(it => ({ item: it, pending: !it.served }));
+                                        .map((it, idx) => ({ item: it, idx, pending: !it.served }))
+                                        .filter(l => l.item.kitchenId === kitchenId && !l.item.removed);
                                     return (
                                         <KdsTokenCard
                                             key={g.token.id}
@@ -87,6 +87,7 @@ export default function TokenTab({ mode, lines, kitchenId, now, timer, lang }) {
                                             timer={timer}
                                             lang={lang}
                                             lines={shown}
+                                            onServe={onServe ? (idx) => onServe(g.token.id, idx) : undefined}
                                             isBold={cat ? (it) => it.category === cat : undefined}
                                         />
                                     );

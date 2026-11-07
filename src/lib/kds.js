@@ -111,6 +111,10 @@ export const DOT = { none: 'bg-gray-300', green: 'bg-green-500', yellow: 'bg-amb
 // whole minutes the oldest pending item has been waiting (at least 1)
 export const ageMinutes = (oldestMs, now) => Math.max(1, Math.round((now - oldestMs) / 60000));
 
+// a served line that was sent back to the kitchen: the billing screen stamps `renewedAt` each time
+const isRenewal = (prevItem, nextItem) =>
+    !!nextItem && nextItem.change === 'renewed' && !!nextItem.renewedAt && prevItem?.renewedAt !== nextItem.renewedAt;
+
 /* ---------- what changed between two snapshots? (drives arrows + sound) ----------
    up   = quantity newly added to the kitchen queue
    down = quantity CANCELLED (token cancelled, line removed, qty reduced)
@@ -144,7 +148,8 @@ export function diffEvents(prevTokens, nextTokens, kitchenId) {
                 if (!nowServed && !billCleared) add(down, key, before - after);
             } else if (after > before) {
                 const nit = ntk.items[idx];
-                const wasServed = pit.served && !nit.served; // un-serve is not a new order
+                // un-serve is not a new order — unless it is a RENEWAL (customer complaint, sent back)
+                const wasServed = pit.served && !nit.served && !isRenewal(pit, nit);
                 if (!wasServed) add(up, key, after - before);
             }
         });
@@ -161,4 +166,54 @@ export function diffEvents(prevTokens, nextTokens, kitchenId) {
     });
 
     return { up, down };
+}
+
+/* ---------- human-level events for notifications ----------
+   Same comparison as diffEvents, but grouped per token so a notification can say
+   "New order #T7_03 — 2× Paneer Tikka, 1× Naan".
+   kind: 'new'    token appeared with food for this kitchen
+         'update' lines added / quantity raised on an existing token
+         'renew'  a served line was sent back (customer complaint)
+         'cancel' token cancelled, line removed or quantity reduced before it was served
+   Serving and bill-clearing are never events.
+   The Supabase edge function (supabase/functions/kds-push) mirrors this logic. */
+export function describeEvents(prevTokens, nextTokens, kitchenId) {
+    const prevMap = new Map(prevTokens.map(t => [t.id, t]));
+    const out = [];
+
+    const pend = (tk, idx) => {
+        if (!tk || tk.status !== 'active') return 0;
+        const it = tk.items[idx];
+        if (!it || it.removed || it.served || it.kitchenId !== kitchenId) return 0;
+        return it.qty;
+    };
+    const line = (it, qty) => ({ name: it.name, portion: it.portion, qty });
+
+    nextTokens.forEach(ntk => {
+        const ptk = prevMap.get(ntk.id);
+        const added = [];
+        const renewed = [];
+        const cancelled = [];
+
+        ntk.items.forEach((it, idx) => {
+            if (it.kitchenId !== kitchenId) return;
+            const prevIt = ptk && idx < ptk.items.length ? ptk.items[idx] : null;
+            const before = prevIt ? pend(ptk, idx) : 0;
+            const after = pend(ntk, idx);
+            if (after > before) {
+                const renewal = isRenewal(prevIt, it);
+                if (prevIt && prevIt.served && !it.served && !renewal) return; // plain un-serve
+                (renewal ? renewed : added).push(line(it, after - before));
+            } else if (after < before) {
+                const nowServed = ntk.status === 'active' && !it.removed && it.served;
+                if (!nowServed) cancelled.push(line(it, before - after));
+            }
+        });
+
+        if (added.length) out.push({ kind: ptk ? 'update' : 'new', token: ntk, lines: added });
+        if (renewed.length) out.push({ kind: 'renew', token: ntk, lines: renewed });
+        if (cancelled.length) out.push({ kind: 'cancel', token: ntk, lines: cancelled });
+    });
+
+    return out;
 }

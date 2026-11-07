@@ -1,4 +1,5 @@
 // public/sw.js
+importScripts('/kds-push.js');
 
 self.addEventListener('install', () => {
   self.skipWaiting();
