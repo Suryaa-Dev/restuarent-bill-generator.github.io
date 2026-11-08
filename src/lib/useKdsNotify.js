@@ -151,10 +151,5 @@ export function useKdsNotify({ branch, kitchenId, lang }) {
         && (status.sup.notifications || status.sup.needsInstall)
         && getPref() !== 'off';
 
-<<<<<<< HEAD:src/lib/usekdsnotify.js
     return { status, busy, diag, enable, disable, test, notifyEvents, showBanner, hideBanner };
 }
-=======
-    return { status, busy, enable, disable, test, notifyEvents, showBanner, hideBanner };
-}
->>>>>>> c4bbce970c90af53c059bfa16f8a6550784453f8:src/lib/useKdsNotify.js
