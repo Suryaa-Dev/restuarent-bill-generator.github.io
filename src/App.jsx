@@ -371,6 +371,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                             onToggleServed={kitchen.onToggleServed}
                             onCancel={kitchen.onCancel}
                             onUpdate={kitchen.onUpdate}
+                            onEditServed={kitchen.onEditServed}
                         />
                     ) : currentBill.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
@@ -668,6 +669,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                         onToggleServed={kitchen.onToggleServed}
                         onCancel={kitchen.onCancel}
                         onUpdate={kitchen.onUpdate}
+                        onEditServed={kitchen.onEditServed}
                     />
                 ) : renderBillRows(currentBill, kitchen, lang, (item, idx, num) => {
                     return (
@@ -1950,6 +1952,39 @@ export default function RestaurantBillGenerator() {
         }
     };
 
+    // All dishes served, but the customer was not happy and sent some back: reduce quantities.
+    // The reduced plates leave the token AND the bill. The KDS is NOT involved (nothing is added,
+    // cancelled or notified there) — any redo of the food is handled by hand.
+    // actions: [{ idx, newQty }]  (idx = position in token.items, newQty 0 = remove the line)
+    const handleEditServedToken = async (token, actions) => {
+        const tk = tokensRef.current.find(x => x.id === token.id) || token;
+        if (!tk || tk.status !== 'active' || !actions?.length) return;
+
+        const items = tk.items.map(it => ({ ...it }));
+        const deltas = [];
+
+        actions.forEach(({ idx, newQty }) => {
+            const it = items[idx];
+            if (!it || it.removed || !it.served) return;
+            const q = Math.max(0, Math.min(it.qty, Number(newQty) || 0));
+            if (q >= it.qty) return;
+            const diff = it.qty - q;
+
+            if (q === 0) items[idx] = { ...it, removed: true, change: 'removed' };
+            else items[idx] = { ...it, qty: q, change: 'qty', prevQty: it.change === 'qty' && it.prevQty != null ? it.prevQty : it.qty };
+
+            deltas.push({ name: it.name, portion: it.portion, category: it.category, price: it.price, isParcel: !!tk.isParcel, delta: -diff });
+        });
+        if (!deltas.length) return;
+
+        const patch = { items };
+        if (!items.some(i => !i.removed)) patch.status = 'cancelled'; // nothing left on this token
+
+        const saved = await tokenQueueRef.current.enqueue(tk.id, patch);
+        upsertToken(saved);
+        await applyBillDelta(tk.tableNumber, deltas);
+    };
+
     const handleSaveTokenUpdate = async (newItems, deltas) => {
         const tk = updateTarget;
         if (!tk) return;
@@ -2095,6 +2130,7 @@ export default function RestaurantBillGenerator() {
             onToggleServed: handleToggleServed,
             onCancel: (tk) => setCancelTarget(tk),
             onUpdate: (tk) => setUpdateTarget(tk),
+            onEditServed: handleEditServedToken,
         };
     };
     const drawerKitchen = buildKitchenBundle(drawerTable, viewingBill);

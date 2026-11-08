@@ -30,6 +30,10 @@ const ICON = '/icon-192.png';
 
 export const hasPushConfig = () => !!VAPID_PUBLIC_KEY;
 
+// last reason why server push could not be set up on this device (shown in Settings)
+let lastPushError = '';
+export const getPushError = () => lastPushError;
+
 /* ---------- capability + permission ---------- */
 
 export function getSupport() {
@@ -91,10 +95,13 @@ async function saveSubscription(sub, { branch, kitchenId, lang }) {
 // branch + kitchen it belongs to (re-run whenever the chef switches kitchen).
 export async function syncPush(ctx) {
     try {
+        lastPushError = '';
         const sup = getSupport();
-        if (!VAPID_PUBLIC_KEY || !sup.push || getPermission() !== 'granted' || !ctx.branch) return false;
+        if (!VAPID_PUBLIC_KEY) { lastPushError = 'VITE_VAPID_PUBLIC_KEY is missing in the app build (add it to .env / hosting settings, then rebuild)'; return false; }
+        if (!sup.push) { lastPushError = 'This browser has no Web Push support'; return false; }
+        if (getPermission() !== 'granted' || !ctx.branch) return false;
         const reg = await getRegistration();
-        if (!reg || !reg.pushManager) return false;
+        if (!reg || !reg.pushManager) { lastPushError = 'Service worker is not ready (is public/sw.js being served?)'; return false; }
         const sub = (await reg.pushManager.getSubscription())
             || (await reg.pushManager.subscribe({
                 userVisibleOnly: true,
@@ -104,7 +111,40 @@ export async function syncPush(ctx) {
         return true;
     } catch (e) {
         console.error('KDS push: could not subscribe', e);
+        lastPushError = e?.message || String(e);
         return false;
+    }
+}
+
+// Is public/kds-push.js really loaded inside the service worker? (null = could not tell)
+export async function pingWorker() {
+    try {
+        const reg = await getRegistration();
+        const worker = reg?.active;
+        if (!worker) return null;
+        return await new Promise((resolve) => {
+            const onMsg = (e) => { if (e.data?.type === 'kds-pong') { done(true); } };
+            const done = (v) => { navigator.serviceWorker.removeEventListener('message', onMsg); clearTimeout(timer); resolve(v); };
+            const timer = setTimeout(() => done(false), 1500);
+            navigator.serviceWorker.addEventListener('message', onMsg);
+            worker.postMessage({ type: 'kds-ping' });
+        });
+    } catch { return null; }
+}
+
+// Asks the Supabase edge function to push a test notification to THIS device
+// (goes through the real server path, so it proves push works with the app closed).
+export async function sendServerTest() {
+    try {
+        const reg = await getRegistration();
+        const sub = reg?.pushManager ? await reg.pushManager.getSubscription() : null;
+        if (!sub) return { ok: false, error: 'This device has no push subscription yet.' };
+        const { data, error } = await supabase.functions.invoke('kds-push', { body: { test: true, endpoint: sub.endpoint } });
+        if (error) return { ok: false, error: `Edge function error: ${error.message || error}` };
+        if (!data?.sent) return { ok: false, error: data?.error || 'The function ran but could not deliver to this device.' };
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
     }
 }
 

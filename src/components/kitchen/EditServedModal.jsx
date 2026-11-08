@@ -1,33 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Ban, RotateCcw, Minus, Plus } from 'lucide-react';
+import { X, Minus, Plus } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../i18n/translations';
 import { tx } from '../../i18n/kdsExtra';
 
-/* Edit a token whose dishes are ALL served (customer complained about the food).
-   Every served line gets two icon buttons:
-     [Cancel]  the dish is dropped from the token AND from the bill
-     [Renew]   the dish goes back to the kitchen queue (KDS alerts the chef); the bill is unchanged
-   For lines with qty > 1 a small stepper picks how many plates are affected.
-   onSave(actions) -> actions = [{ idx, mode: 'cancel' | 'renew', n }]  (idx = position in token.items) */
+/* Opened from the pencil icon beside the token number (shown once any dish is served).
+   The customer was not happy and sent a dish back: reduce its quantity here.
+   The reduced plates leave the token and the bill. Nothing is sent to / changed on the KDS.
+   onSave(actions) -> actions = [{ idx, newQty }]  (idx = position in token.items; newQty 0 = remove the line) */
 export default function EditServedModal({ token, lang, onSave, onClose }) {
     const rows = useMemo(
         () => token.items.map((it, idx) => ({ it, idx })).filter(r => !r.it.removed && r.it.served),
         [token]
     );
-    const [sel, setSel] = useState({}); // idx -> { mode, n }
+    const [qty, setQty] = useState(() => Object.fromEntries(rows.map(r => [r.idx, r.it.qty])));
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
-    const pick = (idx, mode, qty) => setSel(s => {
-        if (s[idx]?.mode === mode) { const { [idx]: _gone, ...rest } = s; return rest; } // tap again = undo
-        return { ...s, [idx]: { mode, n: s[idx]?.n ?? qty } };
-    });
-    const setN = (idx, n, qty) => setSel(s => (s[idx] ? { ...s, [idx]: { ...s[idx], n: Math.min(qty, Math.max(1, n)) } } : s));
+    const step = (idx, max, d) => setQty(q => ({ ...q, [idx]: Math.min(max, Math.max(0, q[idx] + d)) }));
 
-    const actions = Object.entries(sel).map(([idx, v]) => ({ idx: Number(idx), mode: v.mode, n: v.n }));
-    const cancelCount = actions.filter(a => a.mode === 'cancel').length;
-    const renewCount = actions.filter(a => a.mode === 'renew').length;
+    const actions = rows
+        .filter(r => qty[r.idx] < r.it.qty)
+        .map(r => ({ idx: r.idx, newQty: qty[r.idx] }));
 
     const save = async () => {
         if (!actions.length || saving) return;
@@ -56,73 +50,46 @@ export default function EditServedModal({ token, lang, onSave, onClose }) {
 
                 <div className="flex-1 overflow-y-auto px-4">
                     {rows.map(({ it, idx }) => {
-                        const cur = sel[idx];
+                        const cur = qty[idx];
+                        const removed = cur === 0;
+                        const changed = cur < it.qty;
                         return (
-                            <div key={idx} className="py-3 border-b">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex-1 min-w-0">
-                                        <p className={`font-semibold leading-snug ${cur?.mode === 'cancel' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                                            {translateItemName(it.name, lang)}
-                                        </p>
-                                        <p className="text-sm text-gray-500">{translatePortion(it.portion, lang)} · ×{it.qty}</p>
-                                    </div>
-
-                                    <button
-                                        onClick={() => pick(idx, 'cancel', it.qty)}
-                                        aria-pressed={cur?.mode === 'cancel'}
-                                        aria-label={tx('actCancelLong', lang)}
-                                        className={`w-[64px] h-14 shrink-0 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 transition-colors ${cur?.mode === 'cancel' ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-red-200 text-red-600 active:bg-red-50'}`}
-                                    >
-                                        <Ban size={20} />
-                                        <span className="text-[10px] font-bold leading-none">{tx('actCancel', lang)}</span>
-                                    </button>
-                                    <button
-                                        onClick={() => pick(idx, 'renew', it.qty)}
-                                        aria-pressed={cur?.mode === 'renew'}
-                                        aria-label={tx('actRenewLong', lang)}
-                                        className={`w-[64px] h-14 shrink-0 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 transition-colors ${cur?.mode === 'renew' ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-amber-200 text-amber-600 active:bg-amber-50'}`}
-                                    >
-                                        <RotateCcw size={20} />
-                                        <span className="text-[10px] font-bold leading-none">{tx('actRenew', lang)}</span>
-                                    </button>
-                                </div>
-
-                                {cur && (
-                                    <p className={`mt-1.5 text-xs font-semibold ${cur.mode === 'cancel' ? 'text-red-600' : 'text-amber-700'}`}>
-                                        {cur.mode === 'cancel' ? tx('actCancelLong', lang) : tx('actRenewLong', lang)}
+                            <div key={idx} className="py-3 border-b flex items-center gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <p className={`font-semibold leading-snug ${removed ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                                        {translateItemName(it.name, lang)}
                                     </p>
-                                )}
-
-                                {cur && it.qty > 1 && (
-                                    <div className="mt-2 flex items-center gap-3">
-                                        <span className="text-sm text-gray-600">{tx('qtyAffected', lang)}</span>
-                                        <button onClick={() => setN(idx, cur.n - 1, it.qty)} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"><Minus size={16} /></button>
-                                        <span className="font-bold w-6 text-center">{cur.n}</span>
-                                        <button onClick={() => setN(idx, cur.n + 1, it.qty)} className="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"><Plus size={16} /></button>
-                                        <span className="text-sm text-gray-400">/ {it.qty}</span>
-                                    </div>
-                                )}
+                                    <p className="text-sm text-gray-500">
+                                        {translatePortion(it.portion, lang)} · {it.qty}{changed && <span className="text-red-600 font-semibold"> → {cur}</span>}
+                                    </p>
+                                    {removed && <p className="text-xs font-semibold text-red-600">{tx('editRemovedLabel', lang)}</p>}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        onClick={() => step(idx, it.qty, -1)}
+                                        disabled={cur === 0}
+                                        className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200 disabled:opacity-30"
+                                    ><Minus size={18} /></button>
+                                    <span className="font-bold w-7 text-center text-lg">{cur}</span>
+                                    <button
+                                        onClick={() => step(idx, it.qty, 1)}
+                                        disabled={cur >= it.qty}
+                                        className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200 disabled:opacity-30"
+                                    ><Plus size={18} /></button>
+                                </div>
                             </div>
                         );
                     })}
                     {error && <p className="my-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
                 </div>
 
-                <div className="border-t p-4 space-y-2">
-                    {cancelCount > 0 && <p className="text-xs text-gray-500">{tx('editCancelBillNote', lang)}</p>}
+                <div className="border-t p-4">
                     <button
                         onClick={save}
                         disabled={!actions.length || saving}
                         className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold disabled:opacity-40"
                     >
-                        {saving
-                            ? t('savingChanges', lang)
-                            : actions.length
-                                ? `${t('saveChanges', lang)} (${[
-                                    cancelCount ? `${cancelCount} ${tx('editSummaryCancel', lang)}` : '',
-                                    renewCount ? `${renewCount} ${tx('editSummaryRenew', lang)}` : '',
-                                ].filter(Boolean).join(' · ')})`
-                                : tx('editPickOne', lang)}
+                        {saving ? t('savingChanges', lang) : actions.length ? t('saveChanges', lang) : tx('editPickOne', lang)}
                     </button>
                 </div>
             </div>

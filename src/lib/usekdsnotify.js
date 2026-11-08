@@ -8,6 +8,9 @@ import {
     formatEvent,
     getPermission,
     getPref,
+    getPushError,
+    pingWorker,
+    sendServerTest,
     getRegistration,
     getSupport,
     isBannerDismissed,
@@ -26,6 +29,7 @@ export function useKdsNotify({ branch, kitchenId, lang }) {
         sup: getSupport(), perm: getPermission(), enabled: false, push: false,
     }));
     const [busy, setBusy] = useState(false);
+    const [diag, setDiag] = useState({ handler: null, error: '', testMsg: '', testOk: null });
     const [bannerHidden, setBannerHidden] = useState(isBannerDismissed());
     const statusRef = useRef(status);
     statusRef.current = status;
@@ -114,10 +118,30 @@ export function useKdsNotify({ branch, kitchenId, lang }) {
         try { await disableNotifications(); await refresh(); } finally { setBusy(false); }
     }, [refresh]);
 
-    const test = useCallback(() => {
+    // Test: if this device is subscribed to server push, the notification travels the REAL path
+    // (phone -> Supabase function -> push service -> phone); otherwise a local one is shown.
+    const test = useCallback(async () => {
         const l = ctxRef.current.lang;
-        return showLocal({ title: `🔔 ${tx('evNew', l)} · #T0_01`, body: tx('notifTestBody', l), tag: 'kds-test' });
+        setBusy(true);
+        try {
+            const handler = await pingWorker();
+            if (statusRef.current.push) {
+                const res = await sendServerTest();
+                setDiag({ handler, error: getPushError(), testOk: res.ok, testMsg: res.ok ? 'Server test sent — you should get it in a moment (try with the app in the background or closed).' : res.error });
+            } else {
+                await showLocal({ title: `🔔 ${tx('evNew', l)} · #T0_01`, body: tx('notifTestBody', l), tag: 'kds-test' });
+                setDiag({ handler, error: getPushError(), testOk: null, testMsg: '' });
+            }
+        } finally { setBusy(false); }
     }, []);
+
+    // refresh the "why is push off" info whenever the status changes
+    useEffect(() => {
+        if (!status.enabled) return;
+        let alive = true;
+        pingWorker().then(handler => { if (alive) setDiag(d => ({ ...d, handler, error: getPushError() })); });
+        return () => { alive = false; };
+    }, [status.enabled, status.push]);
 
     const hideBanner = useCallback(() => { dismissBanner(); setBannerHidden(true); }, []);
 
@@ -127,5 +151,5 @@ export function useKdsNotify({ branch, kitchenId, lang }) {
         && (status.sup.notifications || status.sup.needsInstall)
         && getPref() !== 'off';
 
-    return { status, busy, enable, disable, test, notifyEvents, showBanner, hideBanner };
+    return { status, busy, diag, enable, disable, test, notifyEvents, showBanner, hideBanner };
 }

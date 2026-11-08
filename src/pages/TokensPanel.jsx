@@ -24,6 +24,7 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
     const liveItems = token.items.filter(i => !i.removed);
     const allServed = !cancelled && liveItems.length > 0 && liveItems.every(i => i.served);
     const live = !cancelled && !allServed;
+    const anyServed = !cancelled && liveItems.some(i => i.served); // something was served -> it can be edited
 
     const frame = cancelled
         ? 'border-gray-200 bg-gray-50'
@@ -36,9 +37,22 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
             {/* header: #T7_02 ............ time */}
             <div className="flex items-start justify-between gap-2 px-3 pt-3 pb-2">
                 <div className="min-w-0">
-                    <p className={`text-lg font-extrabold leading-tight ${cancelled ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                        #{token.tokenNo}
-                    </p>
+                    <div className="flex items-center gap-2">
+                        <p className={`text-lg font-extrabold leading-tight ${cancelled ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                            #{token.tokenNo}
+                        </p>
+                        {/* one edit icon, beside the token number, once any item is served:
+                            reduce the quantity of a served dish the customer sent back */}
+                        {anyServed && onEditServed && (
+                            <button
+                                onClick={() => onEditServed(token)}
+                                aria-label={tx('editServedTitle', lang)}
+                                className="w-8 h-8 rounded-full bg-white border border-blue-300 text-blue-700 flex items-center justify-center active:bg-blue-50"
+                            >
+                                <Pencil size={15} />
+                            </button>
+                        )}
+                    </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                         {token.isParcel && (
                             <Chip className="bg-purple-600 text-white"><ShoppingBag size={10} /> {t('parcelBadge', lang)}</Chip>
@@ -50,7 +64,9 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                         {allServed && <Chip className="bg-green-600 text-white"><Check size={10} /> {t('tokenCompleted', lang)}</Chip>}
                     </div>
                 </div>
-                <span className="text-xs text-gray-500 shrink-0 pt-1">{fmtTime(token.createdAt)}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-gray-500">{fmtTime(token.createdAt)}</span>
+                </div>
             </div>
 
             {/* items: item_name  quantity  portion  [Serve] */}
@@ -60,7 +76,7 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                     const note = it.removed
                         ? t('itemRemoved', lang)
                         : it.change === 'renewed'
-                            ? tx('itemRenewed', lang)
+                            ? `${tx('itemRenewed', lang)}${it.renewCount > 1 ? ` ×${it.renewCount}` : ''}`
                             : it.change === 'replaced'
                             ? `${t('itemReplaced', lang)}${it.replacedFrom ? ` · ${t('replacedFrom', lang)} ${it.replacedFrom}` : ''}`
                             : it.change === 'added'
@@ -109,18 +125,6 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                 })}
             </div>
 
-            {/* everything served: the customer may still complain -> Edit (cancel / renew a dish) */}
-            {allServed && onEditServed && (
-                <div className="p-3 border-t border-black/5">
-                    <button
-                        onClick={() => onEditServed(token)}
-                        className="w-full py-2.5 rounded-xl border border-blue-300 text-blue-700 bg-white font-bold text-sm flex items-center justify-center gap-1.5 active:bg-blue-50"
-                    >
-                        <Pencil size={16} /> {tx('editServed', lang)}
-                    </button>
-                </div>
-            )}
-
             {/* footer actions */}
             {live && (
                 <div className="flex gap-2 p-3 border-t border-black/5">
@@ -146,8 +150,8 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
 
 export default function TokensPanel({ tokens, lang, onToggleServed, onCancel, onUpdate, onEditServed }) {
     const sorted = [...tokens].sort((a, b) => b.seq - a.seq);
-    const [editId, setEditId] = useState(null);
-    const editToken = editId ? tokens.find(x => x.id === editId) : null;
+    const [editTarget, setEditTarget] = useState(null); // { id, initial? }
+    const editToken = editTarget ? tokens.find(x => x.id === editTarget.id) : null;
 
     return (
         <div className="space-y-3">
@@ -165,7 +169,7 @@ export default function TokensPanel({ tokens, lang, onToggleServed, onCancel, on
                         onToggleServed={onToggleServed}
                         onCancel={onCancel}
                         onUpdate={onUpdate}
-                        onEditServed={onEditServed ? (tk) => setEditId(tk.id) : undefined}
+                        onEditServed={onEditServed ? (tk) => setEditTarget({ id: tk.id }) : undefined}
                     />
                 ))
             )}
@@ -175,7 +179,7 @@ export default function TokensPanel({ tokens, lang, onToggleServed, onCancel, on
                     token={editToken}
                     lang={lang}
                     onSave={(actions) => onEditServed(editToken, actions)}
-                    onClose={() => setEditId(null)}
+                    onClose={() => setEditTarget(null)}
                 />
             )}
         </div>

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Check, Pencil, Ban, ShoppingBag, ChefHat } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../i18n/translations';
+import { tx } from '../../i18n/kdsExtra';
+import EditServedModal from './EditServedModal';
 
 const fmtTime = (iso) => {
     if (!iso) return '';
@@ -17,11 +19,12 @@ const Chip = ({ className = '', children }) => (
 
 /* ---------- one token card ---------- */
 
-function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate }) {
+function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServed }) {
     const cancelled = token.status === 'cancelled';
     const liveItems = token.items.filter(i => !i.removed);
     const allServed = !cancelled && liveItems.length > 0 && liveItems.every(i => i.served);
     const live = !cancelled && !allServed;
+    const anyServed = !cancelled && liveItems.some(i => i.served); // something was served -> it can be edited
 
     const frame = cancelled
         ? 'border-gray-200 bg-gray-50'
@@ -34,9 +37,11 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate }) {
             {/* header: #T7_02 ............ time */}
             <div className="flex items-start justify-between gap-2 px-3 pt-3 pb-2">
                 <div className="min-w-0">
-                    <p className={`text-lg font-extrabold leading-tight ${cancelled ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                        #{token.tokenNo}
-                    </p>
+                    <div className="flex items-center gap-2">
+                        <p className={`text-lg font-extrabold leading-tight ${cancelled ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                            #{token.tokenNo}
+                        </p>
+                    </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                         {token.isParcel && (
                             <Chip className="bg-purple-600 text-white"><ShoppingBag size={10} /> {t('parcelBadge', lang)}</Chip>
@@ -48,7 +53,20 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate }) {
                         {allServed && <Chip className="bg-green-600 text-white"><Check size={10} /> {t('tokenCompleted', lang)}</Chip>}
                     </div>
                 </div>
-                <span className="text-xs text-gray-500 shrink-0 pt-1">{fmtTime(token.createdAt)}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                    {/* one edit icon in the title bar, left of the time, once any item is served:
+                        reduce the quantity of a served dish the customer sent back */}
+                    {anyServed && onEditServed && (
+                        <button
+                            onClick={() => onEditServed(token)}
+                            aria-label={tx('editServedTitle', lang)}
+                            className="w-9 h-9 rounded-full bg-white border border-blue-300 text-blue-700 flex items-center justify-center active:bg-blue-50"
+                        >
+                            <Pencil size={16} />
+                        </button>
+                    )}
+                    <span className="text-xs text-gray-500">{fmtTime(token.createdAt)}</span>
+                </div>
             </div>
 
             {/* items: item_name  quantity  portion  [Serve] */}
@@ -57,7 +75,9 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate }) {
                     const dim = it.removed || cancelled;
                     const note = it.removed
                         ? t('itemRemoved', lang)
-                        : it.change === 'replaced'
+                        : it.change === 'renewed'
+                            ? `${tx('itemRenewed', lang)}${it.renewCount > 1 ? ` ×${it.renewCount}` : ''}`
+                            : it.change === 'replaced'
                             ? `${t('itemReplaced', lang)}${it.replacedFrom ? ` · ${t('replacedFrom', lang)} ${it.replacedFrom}` : ''}`
                             : it.change === 'added'
                                 ? t('itemNew', lang)
@@ -99,7 +119,7 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate }) {
                                 )}
                             </div>
                             {/* only shown when the order was changed after firing, so the kitchen notices */}
-                            {note && <p className={`text-[11px] font-semibold mt-0.5 ${it.removed ? 'text-red-600' : 'text-amber-700'}`}>{note}</p>}
+                            {note && <p className={`text-[11px] font-semibold mt-0.5 ${it.removed || it.change === 'renewed' ? 'text-red-600' : 'text-amber-700'}`}>{note}</p>}
                         </div>
                     );
                 })}
@@ -128,8 +148,10 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate }) {
 
 /* ---------- list (LIFO: newest token first) ---------- */
 
-export default function TokensPanel({ tokens, lang, onToggleServed, onCancel, onUpdate }) {
+export default function TokensPanel({ tokens, lang, onToggleServed, onCancel, onUpdate, onEditServed }) {
     const sorted = [...tokens].sort((a, b) => b.seq - a.seq);
+    const [editTarget, setEditTarget] = useState(null); // { id, initial? }
+    const editToken = editTarget ? tokens.find(x => x.id === editTarget.id) : null;
 
     return (
         <div className="space-y-3">
@@ -147,8 +169,18 @@ export default function TokensPanel({ tokens, lang, onToggleServed, onCancel, on
                         onToggleServed={onToggleServed}
                         onCancel={onCancel}
                         onUpdate={onUpdate}
+                        onEditServed={onEditServed ? (tk) => setEditTarget({ id: tk.id }) : undefined}
                     />
                 ))
+            )}
+
+            {editToken && onEditServed && (
+                <EditServedModal
+                    token={editToken}
+                    lang={lang}
+                    onSave={(actions) => onEditServed(editToken, actions)}
+                    onClose={() => setEditTarget(null)}
+                />
             )}
         </div>
     );

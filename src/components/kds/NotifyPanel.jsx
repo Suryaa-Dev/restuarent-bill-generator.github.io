@@ -5,7 +5,7 @@ import { hasPushConfig } from '../../lib/kdsNotify';
 
 // Settings-sheet section: turn notifications on/off, test them, see whether background push is live
 export function NotifyPanel({ lang, notify }) {
-    const { status, busy, enable, disable, test } = notify;
+    const { status, busy, diag, enable, disable, test } = notify;
     const { sup, perm, enabled, push } = status;
     const [msg, setMsg] = useState('');
 
@@ -45,11 +45,22 @@ export function NotifyPanel({ lang, notify }) {
                 </p>
             )}
 
+            {enabled && (
+                <div className="text-xs rounded-lg p-2.5 border border-gray-200 bg-white space-y-1">
+                    <p className="font-bold text-gray-700">{tx('notifCheck', lang)}</p>
+                    <p>{diag.handler === true ? '✅' : diag.handler === false ? '❌' : '⏳'} {tx('notifChkWorker', lang)}</p>
+                    <p>{push ? '✅' : '❌'} {tx('notifChkSub', lang)}</p>
+                    {diag.error && <p className="text-red-600 break-words">⚠ {diag.error}</p>}
+                    {diag.testMsg && <p className={diag.testOk ? 'text-green-700' : 'text-red-600'}>{diag.testOk ? '✅' : '❌'} {diag.testMsg}</p>}
+                    <p className="text-gray-500 pt-1">{tx('notifPopHint', lang)}</p>
+                </div>
+            )}
+
             {!note && (
                 <div className="grid grid-cols-2 gap-2">
                     {enabled ? (
                         <>
-                            <button onClick={test} className="py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-800 flex items-center justify-center gap-1.5 active:bg-gray-100">
+                            <button onClick={test} disabled={busy} className="py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-800 flex items-center justify-center gap-1.5 active:bg-gray-100">
                                 <Bell size={14} /> {tx('notifTest', lang)}
                             </button>
                             <button onClick={disable} disabled={busy} className="py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-600 flex items-center justify-center gap-1.5 active:bg-gray-100 disabled:opacity-50">
