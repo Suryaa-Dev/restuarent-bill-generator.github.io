@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight } from 'lucide-react';
+import { Star, X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight } from 'lucide-react';
 import { supabase } from './config/supabase';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
 import {
@@ -15,6 +15,9 @@ import {
 import { fetchMenuItems, getCategories } from './lib/menu';
 import { toISTParts } from './lib/time';
 import MenuManager from './components/menu/MenuManager';
+import FavoritesManager from './components/menu/FavoritesManager';
+import { tf } from './i18n/favExtra';
+import { fetchFavorites, readLocalFavorites, resolveFavorites, saveFavorites, writeLocalFavorites } from './lib/favorites';
 import KitchenManager from './components/kitchen/KitchenManager';
 import TokensPanel, { CancelTokenModal } from './components/kitchen/TokensPanel';
 import UpdateTokenModal from './components/kitchen/UpdateTokenModal';
@@ -867,7 +870,7 @@ const SettingsSegment = ({ options, value, onChange }) => (
     </div>
 );
 
-const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenHistory, onChangeBranch, onClose }) => {
+const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenFavorites, onOpenHistory, onChangeBranch, onClose }) => {
     // The phone's Back button closes the page (instead of leaving the app). Actions that
     // leave the page (open Menu, History, KDS...) go "back" first so history stays clean.
     const pendingRef = useRef(null);
@@ -958,6 +961,7 @@ const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpe
                 {/* Menu & orders */}
                 <SettingsSection title={t('secManage', lang)}>
                     <SettingsRow icon={UtensilsCrossed} tint="bg-orange-50 text-orange-600" title={t('updateMenu', lang)} desc={t('updateMenuDesc', lang)} onClick={() => leave(onOpenMenuManager)} />
+                    <SettingsRow icon={Star} tint="bg-yellow-50 text-yellow-600" title={tf('favTitle', lang)} desc={tf('favDesc', lang)} onClick={() => leave(onOpenFavorites)} />
                     <SettingsRow icon={History} tint="bg-gray-100 text-gray-700" title={t('orderHistory', lang)} desc={t('orderHistoryDesc', lang)} onClick={() => leave(onOpenHistory)} />
                 </SettingsSection>
             </div>
@@ -1038,6 +1042,12 @@ export default function RestaurantBillGenerator() {
     // settings / menu manager
     const [showSettings, setShowSettings] = useState(false);
     const [showMenuManager, setShowMenuManager] = useState(false);
+    const [showFavManager, setShowFavManager] = useState(false);
+
+    // custom "Fav" tab list: ordered menu item ids, per branch (saved in Supabase + this device)
+    const [favoriteIds, setFavoriteIds] = useState(() => readLocalFavorites(getSavedBranch()) || []);
+    const [favSyncError, setFavSyncError] = useState(false);
+    const favSaveTimer = useRef(null);
     // menu comes from the shared `menu_items` table (same for every branch)
     const [menuItems, setMenuItems] = useState([]);
     const [menuWarning, setMenuWarning] = useState(false);
@@ -1206,6 +1216,35 @@ export default function RestaurantBillGenerator() {
         document.addEventListener('visibilitychange', onVisible);
         return () => document.removeEventListener('visibilitychange', onVisible);
     }, []);
+
+    // custom favourites: show this device's copy at once, then take the server's (and re-check on return)
+    useEffect(() => {
+        if (!branch) return undefined;
+        setFavoriteIds(readLocalFavorites(branch) || []);
+        let alive = true;
+        const load = async () => {
+            const { ids, error } = await fetchFavorites(branch);
+            if (!alive) return;
+            setFavSyncError(!!error);
+            if (ids && !favSaveTimer.current) setFavoriteIds(ids); // never overwrite an edit that is still being saved
+        };
+        load();
+        const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => { alive = false; document.removeEventListener('visibilitychange', onVisible); };
+    }, [branch]);
+
+    // every change in Settings -> Favourites: show it now, save a moment later (quick taps = one save)
+    const handleFavoritesChange = (ids) => {
+        setFavoriteIds(ids);
+        writeLocalFavorites(branch, ids);
+        clearTimeout(favSaveTimer.current);
+        favSaveTimer.current = setTimeout(async () => {
+            favSaveTimer.current = null;
+            const err = await saveFavorites(branch, ids);
+            setFavSyncError(!!err);
+        }, 500);
+    };
 
     // Load "Fav" tab data (most frequently ordered items) for this branch
     useEffect(() => {
@@ -1432,6 +1471,11 @@ export default function RestaurantBillGenerator() {
     // excluded — they display as bare price buttons with no name/photo, which
     // looks out of place mixed in with regular item cards.
     const favoriteItems = useMemo(() => {
+        // the custom list from Settings -> Favourites wins, in exactly the order it was set
+        const custom = resolveFavorites(favoriteIds, mergedMenuItems);
+        if (custom.length > 0) return custom;
+
+        // nothing chosen yet: fall back to the automatic most-ordered list
         const favEligible = mergedMenuItems.filter(it => !it.ratePicker);
         const byName = {};
         favEligible.forEach(it => { byName[it.name] = it; });
@@ -1445,7 +1489,7 @@ export default function RestaurantBillGenerator() {
             return favEligible.slice(0, 8);
         }
         return rankedNames.slice(0, 12).map(name => byName[name]);
-    }, [itemFrequency, mergedMenuItems]);
+    }, [itemFrequency, mergedMenuItems, favoriteIds]);
 
     // Rate-picker items (Cold Drinks / Ice-cream) store all their price points on
     // one item; for the customer-facing grid we split that into one standalone
@@ -2373,6 +2417,7 @@ export default function RestaurantBillGenerator() {
                     onOpenKitchenSettings={() => { setShowSettings(false); setShowKitchenManager(true); }}
                     onOpenKds={() => { setShowSettings(false); navigate('/kds'); }}
                     onOpenMenuManager={() => { setShowSettings(false); setShowMenuManager(true); }}
+                    onOpenFavorites={() => { setShowSettings(false); setShowFavManager(true); }}
                     onOpenHistory={() => { setShowSettings(false); navigate('/history'); }}
                     onChangeBranch={handleRequestChangeBranch}
                     onClose={() => setShowSettings(false)}
@@ -2388,6 +2433,17 @@ export default function RestaurantBillGenerator() {
                     kitchenMode={kitchenMode}
                     kitchens={kitchens}
                     onClose={() => { setShowMenuManager(false); loadMenu(); }}
+                />
+            )}
+
+            {showFavManager && (
+                <FavoritesManager
+                    lang={lang}
+                    items={menuItems}
+                    ids={favoriteIds}
+                    onChange={handleFavoritesChange}
+                    syncError={favSyncError}
+                    onClose={() => setShowFavManager(false)}
                 />
             )}
 
