@@ -59,14 +59,25 @@ self.addEventListener('notificationclick', function (event) {
 
     event.waitUntil((async function () {
         var wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+
+        // 1. a window is already on the KDS: just bring it forward
         for (var i = 0; i < wins.length; i++) {
-            var c = wins[i];
-            if (new URL(c.url).pathname.indexOf('/kds') === 0 && 'focus' in c) return c.focus();
+            if (new URL(wins[i].url).pathname.indexOf('/kds') === 0 && 'focus' in wins[i]) return wins[i].focus();
         }
-        if (wins.length && 'navigate' in wins[0]) {
-            var focused = await wins[0].focus();
-            return focused.navigate(url);
+
+        // 2. the app is open on another screen (e.g. billing): bring it forward and send it to the KDS
+        if (wins.length) {
+            var c = wins[0];
+            try { c = (await c.focus()) || c; } catch (e) { /* ignore */ }
+            try {
+                await c.navigate(url);
+            } catch (e) {
+                c.postMessage({ type: 'kds-open', url: url }); // the app (useKdsLaunch) handles this
+            }
+            return;
         }
+
+        // 3. the app is closed: open it straight on the KDS
         return self.clients.openWindow(url);
     })());
 });

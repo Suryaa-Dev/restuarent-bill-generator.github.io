@@ -29,12 +29,13 @@ import {
     normalizeToken,
     createToken,
     patchToken,
-    convertUnsent,
     archiveTokens,
     moveTokens,
     analyzeBill,
     countPendingServe,
 } from './lib/kitchen';
+import { getTableStatus } from './lib/tableStatus';
+import { applyQuantityChange } from './lib/billOps';
 import { createKeyedQueue, createEchoFilter, nextStamp, tokenEcho } from './lib/billSync';
 
 
@@ -483,7 +484,11 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 
 
 // overview of all tables with running totals
-const AllTablesGrid = ({ tables, bills, parcels, onTableClick, lang }) => {
+// three status dots (top-right of a table box): red = unsent items, orange = sent / not served,
+// green = all served. Only the dot of the current status lights up, the others stay grey.
+const STATUS_DOTS = [['red', 'bg-red-500'], ['orange', 'bg-orange-500'], ['green', 'bg-green-500']];
+
+const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang }) => {
     const getTableTotal = (tableNum) => {
         const bill = bills[tableNum] || [];
         return bill.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -507,8 +512,15 @@ const AllTablesGrid = ({ tables, bills, parcels, onTableClick, lang }) => {
                         <button
                             key={num}
                             onClick={() => onTableClick(num)}
-                            className="aspect-square bg-gray-50 border-2 border-gray-200 rounded-xl p-3 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
+                            className="relative aspect-square bg-gray-50 border-2 border-gray-200 rounded-xl p-3 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
                         >
+                            {statuses && (
+                                <span className="absolute top-1.5 right-1.5 flex gap-1" aria-hidden="true">
+                                    {STATUS_DOTS.map(([key, on]) => (
+                                        <span key={key} className={`w-2 h-2 rounded-full ${statuses[num] === key ? on : 'bg-gray-300'}`} />
+                                    ))}
+                                </span>
+                            )}
                             <span className="text-lg font-bold text-gray-700 mb-2">T{num}</span>
                             {!empty && parcels[num] && (
                                 <span className="mb-1 text-[10px] font-bold text-white bg-purple-600 rounded-full px-2 py-0.5 flex items-center gap-1">
@@ -1523,15 +1535,12 @@ export default function RestaurantBillGenerator() {
         if (!tableToUpdate) return;
 
         const newBills = { ...billsRef.current };
-        const bill = [...(newBills[tableToUpdate] || [])];
-        const qty = parseInt(value);
-
-        // remove item if qty is invalid or zero
-        if (isNaN(qty) || qty <= 0) {
-            bill.splice(index, 1);
-        } else {
-            bill[index] = { ...bill[index], qty };
-        }
+        // Kitchen mode + Parcel button ON: extra plates added with "+" on a dine-in line go to the
+        // parcel section instead (see lib/billOps.js). Otherwise it changes the tapped line only.
+        const bill = applyQuantityChange(newBills[tableToUpdate] || [], index, value, {
+            kitchenMode,
+            parcelOn: !!parcelsRef.current[tableToUpdate],
+        });
 
         newBills[tableToUpdate] = bill;
         billsRef.current = newBills;
@@ -1554,14 +1563,10 @@ export default function RestaurantBillGenerator() {
         const nextParcel = !parcelsRef.current[table];
 
         if (kitchenMode) {
-            // Kitchen mode: the button decides how UNSENT quantities are treated. Switching it
-            // moves them between the dine-in and parcel lists; what was already sent stays put.
-            const tableTokens = tokensRef.current.filter(tk => tk.tableNumber === table);
-            const converted = convertUnsent(items, tableTokens, nextParcel);
-            billsRef.current = { ...billsRef.current, [table]: converted };
-            setBills(billsRef.current);
+            // Kitchen mode: the button only decides where NEW items go (dine-in or parcel section).
+            // Nothing that is already on the bill ever moves between the two sections.
             setParcelsBoth({ ...parcelsRef.current, [table]: nextParcel });
-            await enqueueSave(table, converted);
+            await enqueueSave(table, items);
             return;
         }
 
@@ -1835,6 +1840,17 @@ export default function RestaurantBillGenerator() {
         Object.entries(bills).forEach(([n, bill]) => { if ((bill || []).some(i => i.isParcel)) out[n] = true; });
         return out;
     }, [parcels, bills, kitchenMode]);
+
+    // status dots on the Tables tab (Kitchen mode only — Normal mode has no tokens to track)
+    const tableStatuses = useMemo(() => {
+        if (!kitchenMode) return null;
+        const out = {};
+        tables.forEach(n => {
+            out[n] = getTableStatus(bills[n] || [], tokens.filter(tk => tk.tableNumber === n), kitchenLookup);
+        });
+        return out;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [kitchenMode, bills, tokens, kitchenLookup]);
 
     const handleChangeMode = (mode) => {
         saveMode(mode);
@@ -2297,6 +2313,7 @@ export default function RestaurantBillGenerator() {
                         tables={tables}
                         bills={bills}
                         parcels={parcelBadges}
+                        statuses={tableStatuses}
                         onTableClick={handleAllTablesTableClick}
                         lang={lang}
                     />
