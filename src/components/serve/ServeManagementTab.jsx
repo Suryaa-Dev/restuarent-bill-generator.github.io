@@ -22,7 +22,7 @@ const qtyLabel = (portions) =>
         .map(([p, q]) => `${q}${portionShort(p)}`)
         .join(' | ');
 
-export default function ServeManagementTab({ tokens, tables, categories, kitchens, onServe, lang }) {
+function ServeManagementTabInner({ tokens, tables, categories, kitchens, onServe, lang }) {
     const [sel, setSel] = useState(null);        // { mode: 'category' | 'table', value }
     const [modalTable, setModalTable] = useState(null);
     const [busy, setBusy] = useState(false);
@@ -183,13 +183,14 @@ export default function ServeManagementTab({ tokens, tables, categories, kitchen
             {tableList.length > 0 && (
                 <div className="bg-white border-b px-4 py-3 flex gap-2 overflow-x-auto">
                     {tableList.map(n => {
-                        const oldest = byTable.get(n)[0];
+                        // a selected table with nothing pending left has no entry in byTable
+                        const oldest = byTable.get(n)?.[0];
                         const on = active?.mode === 'table' && active.value === n;
                         return (
                             <button
                                 key={n}
                                 onClick={() => pick('table', n)}
-                                className={`${pillBase} min-w-[44px] h-11 px-3 border-2 ${BORDER[oldest.color]} ${on ? 'bg-orange-500 text-white' : 'bg-white text-gray-900'}`}
+                                className={`${pillBase} min-w-[44px] h-11 px-3 border-2 ${oldest ? BORDER[oldest.color] : 'border-green-300'} ${on ? 'bg-orange-500 text-white' : 'bg-white text-gray-900'}`}
                             >
                                 {n}
                             </button>
@@ -269,5 +270,32 @@ export default function ServeManagementTab({ tokens, tables, categories, kitchen
                 </div>
             )}
         </div>
+    );
+}
+
+// Safety net: if anything in this tab ever throws, only this tab shows a message;
+// the rest of the app (bottom nav, other tabs) keeps working instead of a blank screen.
+class ServeErrorBoundary extends React.Component {
+    constructor(props) { super(props); this.state = { failed: false }; }
+    static getDerivedStateFromError() { return { failed: true }; }
+    componentDidCatch(err) { console.error('Serve tab crashed:', err); }
+    render() {
+        if (!this.state.failed) return this.props.children;
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 bg-gray-50">
+                <p className="text-sm text-gray-600">Something went wrong in the Serve tab.</p>
+                <button onClick={() => this.setState({ failed: false })} className="px-5 py-2 rounded-xl bg-orange-500 text-white font-bold">
+                    Reload
+                </button>
+            </div>
+        );
+    }
+}
+
+export default function ServeManagementTab(props) {
+    return (
+        <ServeErrorBoundary>
+            <ServeManagementTabInner {...props} />
+        </ServeErrorBoundary>
     );
 }
