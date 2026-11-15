@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight } from 'lucide-react';
+import { Star, X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight, HandPlatter } from 'lucide-react';
 import { supabase } from './config/supabase';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
 import {
@@ -38,6 +38,8 @@ import {
     countPendingServe,
 } from './lib/kitchen';
 import { getTableStatus } from './lib/tableStatus';
+import ServeManagementTab from './components/serve/ServeManagementTab';
+import { ts } from './i18n/serveExtra';
 import { applyQuantityChange } from './lib/billOps';
 import { createKeyedQueue, createEchoFilter, nextStamp, tokenEcho } from './lib/billSync';
 
@@ -546,7 +548,7 @@ const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang })
 // Bottom Navigation to switch between Home and All tables grid view
 const BottomNavigation = ({ activeTab, onTabChange, lang }) => (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
-        <div className="grid grid-cols-2">
+        <div className="grid grid-cols-3">
             <button
                 onClick={() => onTabChange('home')}
                 className={`flex flex-col items-center justify-center py-3 transition-colors ${activeTab === 'home'
@@ -567,6 +569,17 @@ const BottomNavigation = ({ activeTab, onTabChange, lang }) => (
             >
                 <Grid3x3 size={24} />
                 <span className="text-xs mt-1 font-medium">{t('allTables', lang)}</span>
+            </button>
+
+            <button
+                onClick={() => onTabChange('serve')}
+                className={`flex flex-col items-center justify-center py-3 transition-colors ${activeTab === 'serve'
+                    ? 'text-orange-500 bg-orange-50'
+                    : 'text-gray-600'
+                    }`}
+            >
+                <HandPlatter size={24} />
+                <span className="text-xs mt-1 font-medium">{ts('tabServe', lang)}</span>
             </button>
         </div>
     </div>
@@ -1961,10 +1974,12 @@ export default function RestaurantBillGenerator() {
         upsertToken({ ...tk, items: nextItems }); // optimistic
         try {
             await tokenQueueRef.current.enqueue(tokenId, { items: nextItems });
+            return true;
         } catch (err) {
             console.error('Serve toggle failed:', err);
             upsertToken({ ...tk, items: prevItems }); // roll back
             alert(t('tokenSaveFailed', lang));
+            return false;
         }
     };
 
@@ -2351,6 +2366,16 @@ export default function RestaurantBillGenerator() {
                             lang={lang}
                         />
                     </>
+                ) : activeTab === 'serve' ? (
+                    /* Serve Management Tab - Mobile */
+                    <ServeManagementTab
+                        tokens={tokens}
+                        tables={tables}
+                        categories={categories}
+                        kitchens={kitchens}
+                        onServe={handleToggleServed}
+                        lang={lang}
+                    />
                 ) : (
                     /* All Tables Tab - Mobile */
                     <AllTablesGrid
