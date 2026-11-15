@@ -6,6 +6,8 @@ import { tx } from '../i18n/kdsExtra';
 import { getSavedLanguage } from '../lib/branchMenu';
 import { useKdsData } from '../lib/useKdsData';
 import { useKdsNotify } from '../lib/useKdsNotify';
+import { useKdsBatches } from '../lib/useKdsBatches';
+import { tb } from '../i18n/batchExtra';
 import {
     FLAG_TTL_MS,
     aggregate,
@@ -18,6 +20,7 @@ import { isSoundOn, playCancelled, playNewOrder, setSoundOn, unlockAudio } from 
 import AllTab from '../components/kds/AllTab';
 import ItemPage from '../components/kds/ItemPage';
 import TokenTab from '../components/kds/TokenTab';
+import BatchesTab from '../components/kds/BatchesTab';
 import { NotifyBanner, NotifyPanel } from '../components/kds/NotifyPanel';
 
 const KITCHEN_KEY = 'restaurant_kds_kitchen';
@@ -123,7 +126,7 @@ function KdsSettings({ lang, kitchens, kitchenId, onKitchen, sound, onSound, not
 
 /* ---------- the display itself (pure: all data comes in as props) ---------- */
 
-export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItems, onBack, initial, onServe, notify }) {
+export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItems, onBack, initial, onServe, notify, batches, live = true, onRefresh }) {
     const kitchen = kitchens.find(k => k.id === kitchenId) || null;
     const config = useMemo(() => normalizeConfig(kitchen?.kdsConfig), [kitchen]);
 
@@ -258,7 +261,8 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
         setShowSettings(false);
     };
 
-    const tabs = [['all', 'kdsAll'], ['table', 'kdsTable'], ['parcel', 'kdsParcel']];
+    // the Batches tab only exists when batch data is supplied (the live KDS does; demos / previews don't)
+    const tabs = [['all', 'kdsAll'], ['table', 'kdsTable'], ['parcel', 'kdsParcel'], ...(batches ? [['batches', null]] : [])];
 
     return (
         <div className="h-dvh bg-gray-100 flex flex-col overflow-hidden">
@@ -269,19 +273,29 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                 <div className="w-1/4 min-w-0 flex items-center gap-2">
                     <span className="w-9 h-9 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><ChefHat size={20} /></span>
                     <span className="text-base font-bold text-gray-900 truncate">{kitchen?.name || t('kdsTitle', lang)}</span>
+                    {/* connection dot: green = live, amber = reconnecting (tap to refresh orders now) */}
+                    <button
+                        onClick={() => onRefresh?.()}
+                        aria-label="Refresh orders"
+                        title={live ? 'Live' : 'Reconnecting…'}
+                        className="w-6 h-6 flex items-center justify-center shrink-0"
+                    >
+                        <span className={`w-2.5 h-2.5 rounded-full ${live ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`} />
+                    </button>
                 </div>
                 <nav className="flex-1 flex justify-center">
                     <div className="inline-flex gap-1 p-1 rounded-full bg-gray-100">
                         {tabs.map(([id, key]) => {
                             const active = tab === id;
-                            const n = id === 'table' ? tabCounts.table : id === 'parcel' ? tabCounts.parcel : 0;
+                            const n = id === 'table' ? tabCounts.table : id === 'parcel' ? tabCounts.parcel
+                                : id === 'batches' ? (batches ? batches.inProgress.length + batches.recs.length : 0) : 0;
                             return (
                                 <button
                                     key={id}
                                     onClick={() => goTab(id)}
-                                    className={`h-10 px-5 rounded-full text-[15px] font-semibold flex items-center gap-2 transition-colors ${active ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-700 active:bg-gray-200'}`}
+                                    className={`h-10 px-4 sm:px-5 rounded-full text-[15px] font-semibold flex items-center gap-2 transition-colors ${active ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-700 active:bg-gray-200'}`}
                                 >
-                                    {t(key, lang)}
+                                    {key ? t(key, lang) : tb('tabBatches', lang)}
                                     {n > 0 && (
                                         <span className={`text-xs font-bold tabular-nums rounded-full px-1.5 py-0.5 leading-none ${active ? 'bg-white/25 text-white' : 'bg-white text-gray-600'}`}>{n}</span>
                                     )}
@@ -309,6 +323,8 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                 <main className="flex-1 min-h-0">
                     {selected ? (
                         <ItemPage itemKey={selected.key} name={selected.name} lines={lines} menuByKey={menuByKey} now={now} timer={config.timer} lang={lang} onBack={() => goTab('all')} />
+                    ) : tab === 'batches' && batches ? (
+                        <BatchesTab batches={batches} timer={config.timer} lang={lang} />
                     ) : tab === 'all' ? (
                         <AllTab config={config} agg={agg} menuByKey={menuByKey} flags={liveFlags} now={now} lang={lang} onOpen={openItem} />
                     ) : (
@@ -351,9 +367,20 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
 export default function KitchenDisplay() {
     const navigate = useNavigate();
     const lang = getSavedLanguage();
-    const { branch, kitchens, tokens, menuItems, ready, error, serveItem } = useKdsData();
+    const { branch, kitchens, tokens, menuItems, ready, error, live, refresh, serveItem } = useKdsData();
     const [kitchenId, setKitchenId] = useState(() => localStorage.getItem(KITCHEN_KEY));
     const notify = useKdsNotify({ branch, kitchenId, lang });
+
+    // Batches tab: recommendations + started batches of the selected kitchen
+    const activeKitchen = kitchens.find(k => k.id === kitchenId) || null;
+    const kdsCfg = useMemo(() => normalizeConfig(activeKitchen?.kdsConfig), [activeKitchen]);
+    const batches = useKdsBatches({
+        branch,
+        kitchenId: activeKitchen ? kitchenId : null,
+        tokens,
+        timer: kdsCfg.timer,
+        weights: activeKitchen?.kdsConfig?.batchWeights,
+    });
 
     useEffect(() => { if (!branch) navigate('/', { replace: true }); }, [branch, navigate]);
 
@@ -383,6 +410,9 @@ export default function KitchenDisplay() {
             menuItems={menuItems}
             onServe={serveItem}
             notify={notify}
+            batches={batches}
+            live={live}
+            onRefresh={refresh}
             onBack={() => navigate('/')}
         />
     );
