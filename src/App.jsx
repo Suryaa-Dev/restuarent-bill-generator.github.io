@@ -546,25 +546,30 @@ const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang })
                         <button
                             key={num}
                             onClick={() => onTableClick(num)}
-                            className="relative min-h-0 bg-gray-50 border-2 border-gray-200 rounded-xl p-1.5 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
+                            className="relative min-h-0 bg-gray-50 border-2 border-gray-200 rounded-xl px-1 pt-4 pb-6 flex flex-col items-center justify-center gap-1 transition-all active:bg-gray-100 active:scale-95"
                         >
+                            {/* status dots: pinned top-right */}
                             {statuses && (
-                                <span className="absolute top-1 right-1 flex gap-0.5" aria-hidden="true">
+                                <span className="absolute top-1.5 right-1.5 flex gap-0.5" aria-hidden="true">
                                     {STATUS_DOTS.map(([key, on]) => (
                                         <span key={key} className={`w-1.5 h-1.5 rounded-full ${statuses[num] === key ? on : 'bg-gray-300'}`} />
                                     ))}
                                 </span>
                             )}
-                            <span className="text-base font-bold text-gray-700 mb-1 leading-none">T{num}</span>
-                            {!empty && parcels[num] && (
-                                <span className="mb-0.5 text-[9px] font-bold text-white bg-purple-600 rounded-full px-1.5 py-px flex items-center gap-0.5 leading-none">
-                                    <ShoppingBag size={9} /> {t('parcelBadge', lang)}
-                                </span>
-                            )}
+
+                            {/* table number + amount: always in the same place, with or without a parcel */}
+                            <span className="text-lg font-bold text-gray-700 leading-none">T{num}</span>
                             {empty ? (
                                 <span className="text-sm text-gray-400 leading-none">—</span>
                             ) : (
                                 <span className="text-base font-bold text-orange-600 leading-none">₹{total}</span>
+                            )}
+
+                            {/* parcel badge: pinned to the bottom, so it never pushes the number / amount around */}
+                            {!empty && parcels[num] && (
+                                <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-white bg-purple-600 rounded-full px-1.5 py-0.5 flex items-center gap-0.5 leading-none whitespace-nowrap">
+                                    <ShoppingBag size={9} /> {t('parcelBadge', lang)}
+                                </span>
                             )}
                         </button>
                     );
