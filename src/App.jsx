@@ -546,7 +546,7 @@ const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang })
                         <button
                             key={num}
                             onClick={() => onTableClick(num)}
-                            className="relative min-h-0 bg-gray-50 border-2 border-gray-200 rounded-xl px-1 pt-4 pb-6 flex flex-col items-center justify-center gap-1 transition-all active:bg-gray-100 active:scale-95"
+                            className="relative min-h-0 bg-gray-50 border-2 border-gray-200 rounded-xl px-1 pt-4 pb-6 flex flex-col items-center justify-center gap-1.5 transition-all active:bg-gray-100 active:scale-95"
                         >
                             {/* status dots: pinned top-right */}
                             {statuses && (
@@ -562,12 +562,12 @@ const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang })
                             {empty ? (
                                 <span className="text-sm text-gray-400 leading-none">—</span>
                             ) : (
-                                <span className="text-base font-bold text-orange-600 leading-none">₹{total}</span>
+                                <span className="text-lg font-bold text-orange-600 leading-none">₹{total}</span>
                             )}
 
                             {/* parcel badge: pinned to the bottom, so it never pushes the number / amount around */}
                             {!empty && parcels[num] && (
-                                <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-white bg-purple-600 rounded-full px-1.5 py-0.5 flex items-center gap-0.5 leading-none whitespace-nowrap">
+                                <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[9px] font-bold text-white bg-purple-600 rounded-full px-1.5 py-1 flex items-center gap-1 leading-none whitespace-nowrap">
                                     <ShoppingBag size={9} /> {t('parcelBadge', lang)}
                                 </span>
                             )}
