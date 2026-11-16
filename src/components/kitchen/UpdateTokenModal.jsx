@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X, Plus, Minus, Search, Lock, ListPlus } from 'lucide-react';
+import { X, Plus, Minus, Search, Lock, ListPlus, ShoppingBag } from 'lucide-react';
 import { t, translateCategory, translateItemName, translatePortion } from '../../i18n/translations';
 import { lineKey } from '../../lib/kitchen';
 import { getCategories } from '../../lib/menu';
@@ -112,6 +112,7 @@ export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClo
         token.items.map(it => ({ ...it, uid: nextUid(), origQty: it.qty, wasRemoved: !!it.removed, isNew: false }))
     );
     const [picking, setPicking] = useState(false);
+    const [parcel, setParcel] = useState(!!token.isParcel); // Parcel button: flips the WHOLE token
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
@@ -130,7 +131,10 @@ export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClo
     };
 
     const activeRows = rows.filter(r => !r.removed);
-    const dirty = rows.some(r => r.isNew || (r.removed && !r.wasRemoved) || (!r.removed && r.qty !== r.origQty));
+    // food already served at the table can't become a parcel, so the button locks then
+    const parcelLocked = rows.some(r => r.served && !r.removed);
+    const parcelChanged = parcel !== !!token.isParcel;
+    const dirty = parcelChanged || rows.some(r => r.isNew || (r.removed && !r.wasRemoved) || (!r.removed && r.qty !== r.origQty));
     const canSave = dirty && activeRows.length > 0 && !saving;
 
     const handleSave = async () => {
@@ -149,24 +153,31 @@ export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClo
         const newQ = {};
         items.forEach(it => { if (!it.removed) newQ[lineKey(it)] = (newQ[lineKey(it)] || 0) + it.qty; });
 
-        const deltas = [...new Set([...Object.keys(oldQ), ...Object.keys(newQ)])]
-            .map(k => {
-                const sample = items.find(it => lineKey(it) === k) || token.items.find(it => lineKey(it) === k);
-                return {
-                    name: sample.name,
-                    portion: sample.portion,
-                    category: sample.category,
-                    price: sample.price,
-                    isParcel: !!token.isParcel, // so the bill change lands on the matching section
-                    delta: (newQ[k] || 0) - (oldQ[k] || 0),
-                };
-            })
-            .filter(d => d.delta !== 0);
+        const sampleOf = (k) => items.find(it => lineKey(it) === k) || token.items.find(it => lineKey(it) === k);
+        const mk = (k, delta, isParcel) => {
+            const sample = sampleOf(k);
+            return { name: sample.name, portion: sample.portion, category: sample.category, price: sample.price, isParcel, delta };
+        };
+        const wasParcel = !!token.isParcel;
+        let deltas;
+        if (parcel === wasParcel) {
+            // same section as before: just the net change (isParcel lands it on the matching bill section)
+            deltas = [...new Set([...Object.keys(oldQ), ...Object.keys(newQ)])]
+                .map(k => mk(k, (newQ[k] || 0) - (oldQ[k] || 0), wasParcel))
+                .filter(d => d.delta !== 0);
+        } else {
+            // Parcel flipped: everything this token had leaves the old bill section and the new
+            // quantities are added to the other one
+            deltas = [
+                ...Object.keys(oldQ).map(k => mk(k, -oldQ[k], wasParcel)),
+                ...Object.keys(newQ).map(k => mk(k, newQ[k], parcel)),
+            ].filter(d => d.delta !== 0);
+        }
 
         setSaving(true);
         setError('');
         try {
-            await onSave(items, deltas);
+            await onSave(items, deltas, parcel);
         } catch (e) {
             console.error(e);
             setError(t('tokenSaveFailed', lang));
@@ -191,14 +202,26 @@ export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClo
                         </button>
                     </div>
 
-                    {/* only action: Add More */}
-                    <div className="px-4 pb-3 border-b">
+                    {/* actions: Add More + Parcel (flips this whole token to / from parcel) */}
+                    <div className="px-4 pb-3 border-b flex items-stretch gap-2">
                         <button
                             onClick={() => setPicking(true)}
-                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-50 text-green-700 active:bg-green-100"
+                            className="flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-50 text-green-700 active:bg-green-100"
                         >
                             <ListPlus size={18} />
                             <span className="text-sm font-semibold">{t('addMore', lang)}</span>
+                        </button>
+                        <button
+                            onClick={() => setParcel(p => !p)}
+                            disabled={parcelLocked}
+                            aria-pressed={parcel}
+                            className={`flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 rounded-xl border transition-colors disabled:opacity-40 ${parcel
+                                ? 'bg-purple-600 text-white border-purple-600 active:bg-purple-700'
+                                : 'bg-white text-gray-700 border-gray-300 active:bg-gray-100'
+                                }`}
+                        >
+                            <ShoppingBag size={18} />
+                            <span className="text-sm font-semibold">{t('parcel', lang)}</span>
                         </button>
                     </div>
 

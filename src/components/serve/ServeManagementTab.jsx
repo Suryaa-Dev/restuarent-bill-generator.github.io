@@ -77,19 +77,20 @@ function ServeManagementTabInner({ tokens, tables, categories, kitchens, onServe
     const liveTokensOf = (table) =>
         (tokens || []).filter(tk => tk.status === 'active' && !tk.isParcel && tk.tableNumber === table
             && (tk.items || []).some(i => !i.removed));
-    const pendingCats = useMemo(() => {
-        const s = new Set();
-        lines.forEach(l => { if (l.item.category) s.add(l.item.category); });
-        return (categories || []).filter(c => s.has(c));
-    }, [lines, categories]);
+    // one pill per dish that still has pending quantity (oldest pending dish first)
+    const pendingItems = useMemo(() => {
+        const seen = new Set();
+        lines.forEach(l => { if (l.item.name) seen.add(l.item.name); });
+        return [...seen];
+    }, [lines]);
 
     // a selection whose items are all served simply disappears
     // (a selected TABLE stays while it still has tokens, so its completed tokens stay visible at the bottom)
     const active = sel && (sel.mode === 'table'
         ? (byTable.has(sel.value) || liveTokensOf(sel.value).length > 0)
-        : pendingCats.includes(sel.value)) ? sel : null;
-    const tableList = active?.mode === 'table' && !pendingTables.includes(active.value)
-        ? [...pendingTables, active.value] : pendingTables;
+        : pendingItems.includes(sel.value)) ? sel : null;
+    // every dine-in table is shown; only tables with pending dishes (or the open one) can be tapped
+    const tableList = tables;
 
     const pick = (mode, value) =>
         setSel(prev => (prev && prev.mode === mode && prev.value === value ? null : { mode, value }));
@@ -108,10 +109,10 @@ function ServeManagementTabInner({ tokens, tables, categories, kitchens, onServe
 
     // result of category mode: tables with unserved items of that category
     const categoryBoxes = useMemo(() => {
-        if (!active || active.mode !== 'category') return [];
+        if (!active || active.mode !== 'item') return [];
         const boxes = [];
         byTable.forEach((tl, table) => {
-            const mine = tl.filter(l => l.item.category === active.value);
+            const mine = tl.filter(l => l.item.name === active.value);
             if (!mine.length) return;
             const portions = {};
             mine.forEach(l => { const p = l.item.portion || ''; portions[p] = (portions[p] || 0) + l.item.qty; });
@@ -164,33 +165,38 @@ function ServeManagementTabInner({ tokens, tables, categories, kitchens, onServe
 
     return (
         <div className="flex flex-col flex-1 w-full overflow-hidden bg-gray-50">
-            {/* 1. category pills */}
-            {pendingCats.length > 0 && (
+            {/* 1. item pills (dishes with pending quantity) */}
+            {pendingItems.length > 0 && (
                 <div className="bg-white border-b px-4 py-3 flex gap-2 overflow-x-auto">
-                    {pendingCats.map(cat => (
+                    {pendingItems.map(name => (
                         <button
-                            key={cat}
-                            onClick={() => pick('category', cat)}
-                            className={`${pillBase} px-4 py-2 ${active?.mode === 'category' && active.value === cat ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+                            key={name}
+                            onClick={() => pick('item', name)}
+                            className={`${pillBase} px-4 py-2 ${active?.mode === 'item' && active.value === name ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700'}`}
                         >
-                            {translateCategory(cat, lang)}
+                            {translateItemName(name, lang)}
                         </button>
                     ))}
                 </div>
             )}
 
-            {/* 2. table pills: number only, waiting time shown on the border (KDS colours) */}
+            {/* 2. table pills: ALL tables, number only; waiting time on the border (KDS colours).
+                   Tables with nothing to serve are greyed out and not clickable. */}
             {tableList.length > 0 && (
                 <div className="bg-white border-b px-4 py-3 flex gap-2 overflow-x-auto">
                     {tableList.map(n => {
-                        // a selected table with nothing pending left has no entry in byTable
                         const oldest = byTable.get(n)?.[0];
                         const on = active?.mode === 'table' && active.value === n;
+                        const enabled = !!oldest || on;
                         return (
                             <button
                                 key={n}
-                                onClick={() => pick('table', n)}
-                                className={`${pillBase} min-w-[44px] h-11 px-3 border-2 ${oldest ? BORDER[oldest.color] : 'border-green-300'} ${on ? 'bg-orange-500 text-white' : 'bg-white text-gray-900'}`}
+                                onClick={() => enabled && pick('table', n)}
+                                disabled={!enabled}
+                                aria-disabled={!enabled}
+                                className={`${pillBase} min-w-[44px] h-11 px-3 border-2 ${enabled
+                                    ? `${oldest ? BORDER[oldest.color] : 'border-green-300'} ${on ? 'bg-orange-500 text-white' : 'bg-white text-gray-900'}`
+                                    : 'border-gray-200 bg-gray-100 text-gray-300 cursor-not-allowed'}`}
                             >
                                 {n}
                             </button>
@@ -201,11 +207,11 @@ function ServeManagementTabInner({ tokens, tables, categories, kitchens, onServe
 
             {/* 3. result */}
             <div className="flex-1 overflow-y-auto p-4">
-                {!active && tableList.length > 0 && (
+                {!active && byTable.size > 0 && (
                     <p className="text-center text-sm text-gray-400 py-10">{ts('pickPrompt', lang)}</p>
                 )}
 
-                {active?.mode === 'category' && (
+                {active?.mode === 'item' && (
                     <div className="grid grid-cols-3 gap-3">
                         {categoryBoxes.map(b => (
                             <button

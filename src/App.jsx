@@ -36,6 +36,7 @@ import {
     moveTokens,
     analyzeBill,
     countPendingServe,
+    computeSentQty,
 } from './lib/kitchen';
 import { getTableStatus } from './lib/tableStatus';
 import ServeManagementTab from './components/serve/ServeManagementTab';
@@ -47,12 +48,25 @@ import { createKeyedQueue, createEchoFilter, nextStamp, tokenEcho } from './lib/
 /* ---------------- Header ---------------- */
 
 // top bar with title + cart (mobile) / settings (all tables)
-const Header = ({ onCartClick, cartItemCount, currentTab, onSettingsClick, lang }) => (
+const Header = ({ onCartClick, cartItemCount, currentTab, onSettingsClick, parcelOn, onParcelClick, lang }) => (
     <header className="sticky top-0 z-50 bg-orange-500 text-white py-3 px-4 shadow-lg">
         <div className="flex justify-between items-center">
             <h1 className="text-lg md:text-2xl font-bold">{t('appName', lang)}</h1>
 
             <div className="flex items-center gap-2">
+                {currentTab === 'home' && (
+                    // Parcel toggle sits left of the cart with a wide gap (mr-5) so it can't be hit by
+                    // accident. Purple + "ON" while new items will go in as parcel.
+                    <button
+                        onClick={onParcelClick}
+                        aria-pressed={!!parcelOn}
+                        aria-label={t('parcel', lang)}
+                        className={`md:hidden mr-5 p-2 rounded-full transition-colors ${parcelOn ? 'bg-purple-600 ring-2 ring-white' : 'bg-orange-600'}`}
+                    >
+                        <ShoppingBag size={22} />
+                    </button>
+                )}
+
                 {currentTab === 'home' && (
                     <button onClick={onCartClick} className="relative md:hidden bg-orange-600 p-2 rounded-full">
                         <ShoppingCart size={24} />
@@ -87,12 +101,12 @@ const TableSelectorModal = ({ tables, selectedTable, onSelectTable, onClose, lan
                 <button onClick={onClose}><X size={24} /></button>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 p-4 overflow-y-auto">
+            <div className="grid grid-cols-4 gap-2 p-4 overflow-y-auto">
                 {tables.map(num => (
                     <button
                         key={num}
                         onClick={() => { onSelectTable(num); onClose(); }}
-                        className={`p-6 rounded-xl text-lg font-bold transition-all ${selectedTable === num
+                        className={`py-4 rounded-xl text-lg font-bold transition-all ${selectedTable === num
                             ? 'bg-orange-500 text-white'
                             : 'bg-gray-100 text-gray-800'
                             }`}
@@ -296,9 +310,23 @@ const renderBillRows = (bill, kitchen, lang, renderLine) => {
 // `kitchen` is null in Normal mode (UI stays exactly as before). In Kitchen System mode it
 // carries the token data/handlers and adds: a 4th "Tokens" tab-switch button and a
 // [Clear Bill] [Send Token] [Print Bill] footer.
+// shown on the Tokens view after "−" was refused on a line that is already with the kitchen
+const SentNotice = ({ lang }) => (
+    <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+        <ClipboardList size={18} className="mt-0.5 shrink-0" />
+        <span>{ts('sentBlocked', lang)}</span>
+    </div>
+);
+
 const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, kitchen, lang }) => {
     const [view, setView] = useState('bill'); // 'bill' | 'tokens'
+    const [notice, setNotice] = useState(false);
     const showTokens = !!kitchen && view === 'tokens';
+    // "−" on a line already sent to the kitchen is refused: jump to the tokens to cancel / update it
+    const minus = async (idx, qty) => {
+        const r = await onChangeQuantity(idx, qty);
+        if (r === 'blocked' && kitchen) { setView('tokens'); setNotice(true); }
+    };
     const canSend = !!kitchen && kitchen.unsentCount > 0 && !kitchen.sending && !!selectedTable;
 
     return (
@@ -350,7 +378,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 
                     {kitchen && (
                         <button
-                            onClick={() => setView(v => (v === 'tokens' ? 'bill' : 'tokens'))}
+                            onClick={() => { setNotice(false); setView(v => (v === 'tokens' ? 'bill' : 'tokens')); }}
                             aria-pressed={showTokens}
                             className={`relative flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 rounded-xl border transition-colors ${showTokens
                                 ? 'bg-indigo-600 text-white border-indigo-600 active:bg-indigo-700'
@@ -369,6 +397,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4">
+                    {showTokens && notice && <SentNotice lang={lang} />}
                     {showTokens ? (
                         <TokensPanel
                             tokens={kitchen.tokens}
@@ -402,7 +431,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                                            onClick={() => minus(idx, item.qty - 1)}
                                             className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
                                         >
                                             <Minus size={16} />
@@ -505,10 +534,10 @@ const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang })
     };
 
     return (
-        <div className="flex-1 overflow-y-auto bg-white p-4">
-            {/* <h2 className="text-xl font-bold text-gray-900 mb-4">All Tables</h2> */}
-
-            <div className="grid grid-cols-3 gap-3">
+        // 20 tables = 4 per row x 5 rows. The grid takes exactly the free height (5 equal rows),
+        // so every table is visible without scrolling on any phone size.
+        <div className="flex-1 min-h-0 bg-white p-3">
+            <div className="grid grid-cols-4 grid-rows-5 gap-2 h-full">
                 {tables.map(num => {
                     const total = getTableTotal(num);
                     const empty = isTableEmpty(num);
@@ -517,25 +546,25 @@ const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang })
                         <button
                             key={num}
                             onClick={() => onTableClick(num)}
-                            className="relative aspect-square bg-gray-50 border-2 border-gray-200 rounded-xl p-3 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
+                            className="relative min-h-0 bg-gray-50 border-2 border-gray-200 rounded-xl p-1.5 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
                         >
                             {statuses && (
-                                <span className="absolute top-1.5 right-1.5 flex gap-1" aria-hidden="true">
+                                <span className="absolute top-1 right-1 flex gap-0.5" aria-hidden="true">
                                     {STATUS_DOTS.map(([key, on]) => (
-                                        <span key={key} className={`w-2 h-2 rounded-full ${statuses[num] === key ? on : 'bg-gray-300'}`} />
+                                        <span key={key} className={`w-1.5 h-1.5 rounded-full ${statuses[num] === key ? on : 'bg-gray-300'}`} />
                                     ))}
                                 </span>
                             )}
-                            <span className="text-lg font-bold text-gray-700 mb-2">T{num}</span>
+                            <span className="text-base font-bold text-gray-700 mb-1 leading-none">T{num}</span>
                             {!empty && parcels[num] && (
-                                <span className="mb-1 text-[10px] font-bold text-white bg-purple-600 rounded-full px-2 py-0.5 flex items-center gap-1">
-                                    <ShoppingBag size={10} /> {t('parcelBadge', lang)}
+                                <span className="mb-0.5 text-[9px] font-bold text-white bg-purple-600 rounded-full px-1.5 py-px flex items-center gap-0.5 leading-none">
+                                    <ShoppingBag size={9} /> {t('parcelBadge', lang)}
                                 </span>
                             )}
                             {empty ? (
-                                <span className="text-sm text-gray-400">—</span>
+                                <span className="text-sm text-gray-400 leading-none">—</span>
                             ) : (
-                                <span className="text-xl font-bold text-orange-600">₹{total}</span>
+                                <span className="text-base font-bold text-orange-600 leading-none">₹{total}</span>
                             )}
                         </button>
                     );
@@ -676,7 +705,12 @@ const DesktopTableGrid = ({ tables, bills, parcels, selectedTable, onSelectTable
 // fixed bill section on desktop
 const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, kitchen, lang }) => {
     const [view, setView] = useState('bill'); // 'bill' | 'tokens' (Kitchen System mode only)
+    const [notice, setNotice] = useState(false);
     const showTokens = !!kitchen && view === 'tokens';
+    const minus = async (idx, qty) => {
+        const r = await onChangeQuantity(idx, qty);
+        if (r === 'blocked' && kitchen) { setView('tokens'); setNotice(true); }
+    };
     const canSend = !!kitchen && kitchen.unsentCount > 0 && !kitchen.sending && !!selectedTable;
 
     return (
@@ -689,6 +723,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
 
             {/* scrollable bill items (or token cards) */}
             <div className="bill-scroll-area mb-3 overflow-y-auto">
+                {showTokens && notice && <SentNotice lang={lang} />}
                 {showTokens ? (
                     <TokensPanel
                         tokens={kitchen.tokens}
@@ -712,7 +747,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
 
                             <div className="flex items-center gap-3">
                                 <button
-                                    onClick={() => onChangeQuantity(idx, item.qty - 1)}
+                                    onClick={() => minus(idx, item.qty - 1)}
                                     className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"
                                 >
                                     <Minus size={14} />
@@ -757,7 +792,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
 
                     {kitchen && (
                         <button
-                            onClick={() => setView(v => (v === 'tokens' ? 'bill' : 'tokens'))}
+                            onClick={() => { setNotice(false); setView(v => (v === 'tokens' ? 'bill' : 'tokens')); }}
                             aria-pressed={showTokens}
                             className={`relative w-full py-2 rounded-lg font-semibold border flex items-center justify-center gap-2 transition-colors ${showTokens
                                 ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
@@ -982,10 +1017,13 @@ const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpe
     );
 };
 
+// every dine-in table (needs a matching row in the `tables` DB table, see tables_16_20.sql)
+const TABLE_NUMBERS = Array.from({ length: 20 }, (_, i) => i + 1);
+
 // Main App
 export default function RestaurantBillGenerator() {
     const navigate = useNavigate();
-    const tables = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    const tables = TABLE_NUMBERS;
     // bills per table -> { tableNo: items[] }
     const [bills, setBills] = useState({});
 
@@ -1591,6 +1629,19 @@ export default function RestaurantBillGenerator() {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
 
+        // Kitchen mode: quantity that already went to the kitchen (even if served) can't be
+        // reduced from the bill. The waiter has to cancel / update the token, which fixes the
+        // token and the bill together, so they can never disagree.
+        if (kitchenMode) {
+            const line = (billsRef.current[tableToUpdate] || [])[index];
+            const wanted = parseInt(value);
+            const newQty = isNaN(wanted) ? 0 : Math.max(0, wanted);
+            if (line && newQty < line.qty) {
+                const sentQty = computeSentQty(tokensRef.current.filter(tk => tk.tableNumber === tableToUpdate))[lineKey(line)] || 0;
+                if (newQty < sentQty) return 'blocked';
+            }
+        }
+
         const newBills = { ...billsRef.current };
         // Kitchen mode + Parcel button ON: extra plates added with "+" on a dine-in line go to the
         // parcel section instead (see lib/billOps.js). Otherwise it changes the tapped line only.
@@ -2060,10 +2111,13 @@ export default function RestaurantBillGenerator() {
         await applyBillDelta(tk.tableNumber, deltas);
     };
 
-    const handleSaveTokenUpdate = async (newItems, deltas) => {
+    const handleSaveTokenUpdate = async (newItems, deltas, makeParcel) => {
         const tk = updateTarget;
         if (!tk) return;
-        const saved = await tokenQueueRef.current.enqueue(tk.id, { items: newItems, revision: (tk.revision || 0) + 1 });
+        const patch = { items: newItems, revision: (tk.revision || 0) + 1 };
+        // the waiter flipped Parcel on / off for this token (the bill deltas already move the quantities)
+        if (makeParcel !== undefined && !!makeParcel !== !!tk.isParcel) patch.is_parcel = !!makeParcel;
+        const saved = await tokenQueueRef.current.enqueue(tk.id, patch);
         upsertToken(saved);
         if (deltas.length) await applyBillDelta(tk.tableNumber, deltas);
         setUpdateTarget(null);
@@ -2249,6 +2303,8 @@ export default function RestaurantBillGenerator() {
                 cartItemCount={cartItemCount}
                 currentTab={activeTab}
                 onSettingsClick={() => setShowSettings(true)}
+                parcelOn={!!(selectedTable && parcels[selectedTable])}
+                onParcelClick={() => (selectedTable ? toggleParcel(selectedTable) : setShowTableModal(true))}
                 lang={lang}
             />
 
