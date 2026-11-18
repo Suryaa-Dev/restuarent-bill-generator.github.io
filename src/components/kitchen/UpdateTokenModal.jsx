@@ -21,6 +21,7 @@ const makeNewRow = (opt, qty, replacedFrom) => ({
     wasRemoved: false,
     isNew: true,
     addedAt: new Date().toISOString(), // when it entered the kitchen queue (KDS timer)
+    cartAt: new Date().toISOString(), // added straight to the token, so cart time = sent time
     replacedFrom: replacedFrom || undefined,
 });
 

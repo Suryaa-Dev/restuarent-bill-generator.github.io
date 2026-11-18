@@ -1,11 +1,14 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { X, Plus, Minus, Search, ChevronLeft, ChevronRight, Camera, Trash2, UtensilsCrossed, Loader2 } from 'lucide-react';
+import { X, Plus, Minus, Search, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ArrowUpDown, Camera, Trash2, UtensilsCrossed, Loader2 } from 'lucide-react';
+import { ts } from '../../i18n/serveExtra';
 import { t, translateCategory, translateItemName, translatePortion } from '../../i18n/translations';
 import {
     createMenuItem,
     updateMenuItem,
     deleteMenuItem,
     setMenuItemHidden,
+    saveMenuSortOrders,
+    fetchMenuItems,
     uploadMenuImage,
     deleteMenuImageByUrl,
     getCategories,
@@ -375,16 +378,31 @@ export default function MenuManager({ lang, items, loadWarning, onItemsChange, o
     const [editing, setEditing] = useState(null); // null = list, 'new' = add, item = edit
     const [busyId, setBusyId] = useState(null);
     const [listError, setListError] = useState('');
+    const [seqMode, setSeqMode] = useState(false);   // "Sequence" mode: ▲▼ buttons to reorder
+    const [ordering, setOrdering] = useState(false); // a new order is being saved
 
-    const categories = useMemo(() => getCategories(items), [items]);
+    const sortedItems = useMemo(
+        () => [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+        [items]
+    );
+    const categories = useMemo(() => getCategories(sortedItems), [sortedItems]);
 
-    const visible = useMemo(() => {
+    // one section per category (in menu order), items inside it in menu order
+    const sections = useMemo(() => {
         const q = query.trim().toLowerCase();
-        return items.filter(i =>
-            (!category || i.category === category) &&
-            (!q || i.name.toLowerCase().includes(q) || (i.nameMr || '').includes(q) || i.category.toLowerCase().includes(q))
-        );
-    }, [items, query, category]);
+        return categories
+            .filter(c => !category || c === category)
+            .map(c => ({
+                category: c,
+                items: sortedItems.filter(i => i.category === c &&
+                    (!q || i.name.toLowerCase().includes(q) || (i.nameMr || '').includes(q) || i.category.toLowerCase().includes(q))),
+            }))
+            .filter(sec => sec.items.length > 0);
+    }, [categories, sortedItems, query, category]);
+    const visibleCount = sections.reduce((n, sec) => n + sec.items.length, 0);
+
+    // reordering only makes sense on the full, unfiltered-by-search list
+    const reorderOn = seqMode && !query.trim();
 
     const nextSortOrder = (items.reduce((m, i) => Math.max(m, i.sortOrder), 0) || 0) + 10;
 
@@ -402,6 +420,51 @@ export default function MenuManager({ lang, items, loadWarning, onItemsChange, o
         } finally {
             setBusyId(null);
         }
+    };
+
+    // Rebuilds the whole menu order (categories in order, items in order inside each) and saves
+    // only the rows whose position changed.
+    const applyOrder = async (categoryOrder, overrides = {}) => {
+        if (ordering) return;
+        const flat = [];
+        categoryOrder.forEach(c => flat.push(...(overrides[c] || sortedItems.filter(i => i.category === c))));
+        const next = flat.map((it, i) => ({ ...it, sortOrder: (i + 1) * 10 }));
+        const before = new Map(items.map(i => [i.id, i.sortOrder]));
+        const changes = next.filter(it => before.get(it.id) !== it.sortOrder).map(it => ({ id: it.id, sortOrder: it.sortOrder }));
+        if (changes.length === 0) return;
+
+        setListError('');
+        setOrdering(true);
+        onItemsChange(next); // optimistic
+        try {
+            await saveMenuSortOrders(changes);
+        } catch (err) {
+            console.error('Saving menu order failed:', err);
+            setListError(t('saveFailed', lang));
+            const fresh = await fetchMenuItems(); // show what is really saved
+            onItemsChange(fresh.items);
+        } finally {
+            setOrdering(false);
+        }
+    };
+
+    const moveItem = (item, dir) => {
+        const list = sortedItems.filter(i => i.category === item.category);
+        const from = list.findIndex(i => i.id === item.id);
+        const to = from + dir;
+        if (from < 0 || to < 0 || to >= list.length) return;
+        const moved = [...list];
+        [moved[from], moved[to]] = [moved[to], moved[from]];
+        applyOrder(categories, { [item.category]: moved });
+    };
+
+    const moveCategory = (cat, dir) => {
+        const from = categories.indexOf(cat);
+        const to = from + dir;
+        if (from < 0 || to < 0 || to >= categories.length) return;
+        const order = [...categories];
+        [order[from], order[to]] = [order[to], order[from]];
+        applyOrder(order);
     };
 
     const handleSaved = (saved) => {
@@ -456,6 +519,16 @@ export default function MenuManager({ lang, items, loadWarning, onItemsChange, o
                                     />
                                 </div>
                                 <button
+                                    onClick={() => setSeqMode(v => !v)}
+                                    disabled={!!query.trim()}
+                                    aria-pressed={reorderOn}
+                                    aria-label={ts('sequence', lang)}
+                                    title={query.trim() ? ts('clearSearchToReorder', lang) : ts('sequence', lang)}
+                                    className={`px-3 rounded-lg border font-bold flex items-center gap-1 shrink-0 disabled:opacity-40 ${reorderOn ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-300 text-gray-700'}`}
+                                >
+                                    <ArrowUpDown size={18} />
+                                </button>
+                                <button
                                     onClick={() => setEditing('new')}
                                     className="px-4 rounded-lg bg-orange-500 text-white font-bold flex items-center gap-1 shrink-0"
                                 >
@@ -482,40 +555,113 @@ export default function MenuManager({ lang, items, loadWarning, onItemsChange, o
                             </p>
                         )}
 
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                            {visible.length === 0 ? (
+                        {reorderOn && (
+                            <p className="mx-4 mt-3 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg p-2.5">
+                                {ts('sequenceHint', lang)}
+                            </p>
+                        )}
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                            {sections.length === 0 ? (
                                 <p className="text-center text-gray-400 py-12">{t('noMenuItems', lang)}</p>
                             ) : (
-                                visible.map(item => (
-                                    <div
-                                        key={item.id}
-                                        onClick={() => setEditing(item)}
-                                        className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer active:bg-gray-50 ${item.isHidden ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}
-                                    >
-                                        <Thumb src={item.img} />
-                                        <div className={`flex-1 min-w-0 ${item.isHidden ? 'opacity-50' : ''}`}>
-                                            <p className="font-semibold text-gray-800 truncate">{translateItemName(item.name, lang)}</p>
-                                            <p className="text-xs text-gray-500 truncate">
-                                                {translateCategory(item.category, lang)} · <span className="text-orange-600 font-medium">{priceSummary(item, lang)}</span>
-                                                {kitchenMode && (
-                                                    <> · <span className="text-indigo-600 font-medium">{kitchens.find(k => k.id === item.kitchenId)?.name || '—'}</span></>
+                                sections.map(sec => {
+                                    const catIdx = categories.indexOf(sec.category);
+                                    const fullList = sortedItems.filter(i => i.category === sec.category);
+                                    return (
+                                        <section key={sec.category}>
+                                            {/* category header (+ move the whole category in Sequence mode) */}
+                                            <div className="flex items-center gap-2 mb-2 sticky top-0 bg-white/95 backdrop-blur py-1 z-[1]">
+                                                <h3 className="font-bold text-gray-800 uppercase tracking-wide text-xs flex-1 truncate">
+                                                    {translateCategory(sec.category, lang)}
+                                                    <span className="ml-2 text-gray-400 font-medium normal-case tracking-normal">{sec.items.length}</span>
+                                                </h3>
+                                                {reorderOn && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => moveCategory(sec.category, -1)}
+                                                            disabled={ordering || catIdx === 0}
+                                                            aria-label={ts('moveUp', lang)}
+                                                            className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center disabled:opacity-30"
+                                                        >
+                                                            <ChevronUp size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => moveCategory(sec.category, 1)}
+                                                            disabled={ordering || catIdx === categories.length - 1}
+                                                            aria-label={ts('moveDown', lang)}
+                                                            className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center disabled:opacity-30"
+                                                        >
+                                                            <ChevronDown size={18} />
+                                                        </button>
+                                                    </>
                                                 )}
-                                            </p>
-                                        </div>
-                                        <Switch
-                                            checked={!item.isHidden}
-                                            disabled={busyId === item.id}
-                                            onChange={(v) => toggleVisible(item, v)}
-                                            label={t('showOnMenu', lang)}
-                                        />
-                                        <ChevronRight size={18} className="text-gray-300 shrink-0" />
-                                    </div>
-                                ))
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                {sec.items.map(item => {
+                                                    const pos = fullList.findIndex(i => i.id === item.id);
+                                                    return (
+                                                        <div
+                                                            key={item.id}
+                                                            onClick={() => !reorderOn && setEditing(item)}
+                                                            className={`flex items-center gap-3 p-2.5 rounded-xl border ${reorderOn ? '' : 'cursor-pointer active:bg-gray-50'} ${item.isHidden ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}
+                                                        >
+                                                            {reorderOn && (
+                                                                <span className="w-6 text-center text-xs font-bold text-gray-400 shrink-0">{pos + 1}</span>
+                                                            )}
+                                                            <Thumb src={item.img} />
+                                                            <div className={`flex-1 min-w-0 ${item.isHidden ? 'opacity-50' : ''}`}>
+                                                                <p className="font-semibold text-gray-800 truncate">{translateItemName(item.name, lang)}</p>
+                                                                <p className="text-xs text-gray-500 truncate">
+                                                                    <span className="text-orange-600 font-medium">{priceSummary(item, lang)}</span>
+                                                                    {kitchenMode && (
+                                                                        <> · <span className="text-indigo-600 font-medium">{kitchens.find(k => k.id === item.kitchenId)?.name || '—'}</span></>
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                            {reorderOn ? (
+                                                                <div className="flex gap-1 shrink-0">
+                                                                    <button
+                                                                        onClick={() => moveItem(item, -1)}
+                                                                        disabled={ordering || pos === 0}
+                                                                        aria-label={ts('moveUp', lang)}
+                                                                        className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center disabled:opacity-30"
+                                                                    >
+                                                                        <ChevronUp size={20} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => moveItem(item, 1)}
+                                                                        disabled={ordering || pos === fullList.length - 1}
+                                                                        aria-label={ts('moveDown', lang)}
+                                                                        className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center disabled:opacity-30"
+                                                                    >
+                                                                        <ChevronDown size={20} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <Switch
+                                                                        checked={!item.isHidden}
+                                                                        disabled={busyId === item.id}
+                                                                        onChange={(v) => toggleVisible(item, v)}
+                                                                        label={t('showOnMenu', lang)}
+                                                                    />
+                                                                    <ChevronRight size={18} className="text-gray-300 shrink-0" />
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </section>
+                                    );
+                                })
                             )}
                         </div>
 
                         <p className="px-4 py-2 text-xs text-gray-400 border-t text-center">
-                            {visible.length} / {items.length} {t('itemsCount', lang)}
+                            {visibleCount} / {items.length} {t('itemsCount', lang)}
                         </p>
                     </>
                 )}

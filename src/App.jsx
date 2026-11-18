@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight, HandPlatter } from 'lucide-react';
+import { Star, X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight, HandPlatter, Lock, Info } from 'lucide-react';
 import { supabase } from './config/supabase';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
 import {
@@ -41,6 +41,9 @@ import {
 import { getTableStatus } from './lib/tableStatus';
 import ServeManagementTab from './components/serve/ServeManagementTab';
 import { ts } from './i18n/serveExtra';
+import { useTableLocks } from './lib/useTableLocks';
+import ServiceTimeModal from './components/kitchen/ServiceTimeModal';
+import { stampCartTimes, buildTimelineRows, saveTimelineRows, newUuid } from './lib/timeline';
 import { applyQuantityChange } from './lib/billOps';
 import { createKeyedQueue, createEchoFilter, nextStamp, tokenEcho } from './lib/billSync';
 
@@ -321,6 +324,7 @@ const SentNotice = ({ lang }) => (
 const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, kitchen, lang }) => {
     const [view, setView] = useState('bill'); // 'bill' | 'tokens'
     const [notice, setNotice] = useState(false);
+    const [showTimes, setShowTimes] = useState(false); // service-time proof (Kitchen mode)
     const showTokens = !!kitchen && view === 'tokens';
     // "−" on a line already sent to the kitchen is refused: jump to the tokens to cancel / update it
     const minus = async (idx, qty) => {
@@ -335,9 +339,20 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                 {/* Title + close kept on their own row, away from the action buttons
                     below, so closing the drawer is never at risk of a mis-tap. */}
                 <div className="flex justify-between items-center px-4 pt-4 pb-2 sticky top-0 bg-white z-10">
-                    <h2 className="text-xl font-bold truncate">
-                        {selectedTable ? `${t('tableLabel', lang)} ${selectedTable}` : t('cart', lang)}
-                    </h2>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <h2 className="text-xl font-bold truncate">
+                            {selectedTable ? `${t('tableLabel', lang)} ${selectedTable}` : t('cart', lang)}
+                        </h2>
+                        {kitchen && selectedTable && (
+                            <button
+                                onClick={() => setShowTimes(true)}
+                                aria-label={ts('serviceTimes', lang)}
+                                className="p-1.5 rounded-full bg-blue-50 text-blue-600 active:bg-blue-100 shrink-0"
+                            >
+                                <Info size={18} />
+                            </button>
+                        )}
+                    </div>
                     <button onClick={onClose} className="p-1 -mr-1 shrink-0" aria-label={t('close', lang)}>
                         <X size={24} />
                     </button>
@@ -512,6 +527,15 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                     </div>
                 )}
             </div>
+            {showTimes && (
+                <ServiceTimeModal
+                    table={selectedTable}
+                    bill={currentBill}
+                    tokens={kitchen?.tokens || []}
+                    lang={lang}
+                    onClose={() => setShowTimes(false)}
+                />
+            )}
         </div>
     );
 };
@@ -522,7 +546,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
 // green = all served. Only the dot of the current status lights up, the others stay grey.
 const STATUS_DOTS = [['red', 'bg-red-500'], ['orange', 'bg-orange-500'], ['green', 'bg-green-500']];
 
-const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang }) => {
+const AllTablesGrid = ({ tables, bills, parcels, statuses, lockedTables = {}, onTableClick, lang }) => {
     const getTableTotal = (tableNum) => {
         const bill = bills[tableNum] || [];
         return bill.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -541,13 +565,17 @@ const AllTablesGrid = ({ tables, bills, parcels, statuses, onTableClick, lang })
                 {tables.map(num => {
                     const total = getTableTotal(num);
                     const empty = isTableEmpty(num);
+                    const locked = !!lockedTables[num]; // another device has this table's cart open
 
                     return (
                         <button
                             key={num}
                             onClick={() => onTableClick(num)}
-                            className="relative min-h-0 bg-gray-50 border-2 border-gray-200 rounded-xl px-1 pt-4 pb-6 flex flex-col items-center justify-center gap-1.5 transition-all active:bg-gray-100 active:scale-95"
+                            className={`relative min-h-0 border-2 rounded-xl px-1 pt-4 pb-6 flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 ${locked ? 'bg-gray-100 border-red-200 opacity-60' : 'bg-gray-50 border-gray-200 active:bg-gray-100'}`}
                         >
+                            {/* in use on another device */}
+                            {locked && <Lock size={12} className="absolute top-1.5 left-1.5 text-red-500" aria-label="in use" />}
+
                             {/* status dots: pinned top-right */}
                             {statuses && (
                                 <span className="absolute top-1.5 right-1.5 flex gap-0.5" aria-hidden="true">
@@ -1095,6 +1123,21 @@ export default function RestaurantBillGenerator() {
     const [branch, setBranch] = useState(getSavedBranch());
     const [showBranchModal, setShowBranchModal] = useState(!getSavedBranch());
 
+    // ---- table cart locks: only ONE device can have a table's cart open at a time ----
+    const [toast, setToast] = useState('');
+    const toastTimerRef = useRef(null);
+    const showToast = (msg) => {
+        setToast(msg);
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = setTimeout(() => setToast(''), 3500);
+    };
+    const lockConflictRef = useRef(null);
+    const lockedTables = useTableLocks(
+        branch,
+        showCartDrawer ? (viewingTableFromAllTables || selectedTable) : null,
+        (tb) => lockConflictRef.current?.(tb)
+    );
+
     // settings / menu manager
     const [showSettings, setShowSettings] = useState(false);
     const [showMenuManager, setShowMenuManager] = useState(false);
@@ -1615,7 +1658,13 @@ export default function RestaurantBillGenerator() {
             bill.push({ name, portion, price, qty: 1, category, ...(parcelMode ? { isParcel: true } : {}) });
         }
 
-        newBills[selectedTable] = bill;
+        // timing log: remember when this dish went into the cart
+        newBills[selectedTable] = stampCartTimes(
+            billsRef.current[selectedTable] || [],
+            bill,
+            tokensRef.current.filter(tk => tk.tableNumber === selectedTable)
+        );
+        const stamped = newBills[selectedTable];
 
         // update the ref immediately (synchronously) so the very next tap, even
         // before this render commits, sees this addition
@@ -1625,7 +1674,7 @@ export default function RestaurantBillGenerator() {
         setBills(newBills);
 
         // sync with backend (queued if offline; serialized per-table)
-        await enqueueSave(selectedTable, bill);
+        await enqueueSave(selectedTable, stamped);
     };
 
 
@@ -1650,10 +1699,14 @@ export default function RestaurantBillGenerator() {
         const newBills = { ...billsRef.current };
         // Kitchen mode + Parcel button ON: extra plates added with "+" on a dine-in line go to the
         // parcel section instead (see lib/billOps.js). Otherwise it changes the tapped line only.
-        const bill = applyQuantityChange(newBills[tableToUpdate] || [], index, value, {
-            kitchenMode,
-            parcelOn: !!parcelsRef.current[tableToUpdate],
-        });
+        const bill = stampCartTimes(
+            newBills[tableToUpdate] || [],
+            applyQuantityChange(newBills[tableToUpdate] || [], index, value, {
+                kitchenMode,
+                parcelOn: !!parcelsRef.current[tableToUpdate],
+            }),
+            tokensRef.current.filter(tk => tk.tableNumber === tableToUpdate)
+        );
 
         newBills[tableToUpdate] = bill;
         billsRef.current = newBills;
@@ -1718,10 +1771,12 @@ export default function RestaurantBillGenerator() {
                 // `timestamp without time zone`, so it holds UTC wall-clock time).
                 const ist = toISTParts(now);
 
-                // save completed bill for analytics
+                // save completed bill for analytics (id made here so the timing log can point to it)
+                const completedBillId = newUuid();
                 const { error: insertError } = await supabase
                     .from('completed_bills')
                     .insert({
+                        id: completedBillId,
                         table_number: tableToUpdate,
                         items: billItems,
                         total,
@@ -1737,6 +1792,16 @@ export default function RestaurantBillGenerator() {
                     });
 
                 if (insertError) throw insertError;
+
+                // timing log: one row per dish with cart / sent / served / cleared times (never blocks the clear)
+                await saveTimelineRows(buildTimelineRows({
+                    billId: completedBillId,
+                    branch,
+                    table: tableToUpdate,
+                    bill: billItems,
+                    tokens: tokensRef.current.filter(tk => tk.tableNumber === tableToUpdate),
+                    clearedAt: now,
+                }));
 
                 // let any in-flight saves for this table finish first, so none can land AFTER the
                 // clear and bring the bill back to life; then remember the clear so its realtime
@@ -2050,7 +2115,7 @@ export default function RestaurantBillGenerator() {
                 if (q <= 0) bill.splice(idx, 1);
                 else bill[idx] = { ...bill[idx], qty: q };
             } else if (d.delta > 0) {
-                bill.push({ name: d.name, portion: d.portion, price: d.price, qty: d.delta, category: d.category, ...(d.isParcel ? { isParcel: true } : {}) });
+                bill.push({ name: d.name, portion: d.portion, price: d.price, qty: d.delta, category: d.category, addedAt: new Date().toISOString(), ...(d.isParcel ? { isParcel: true } : {}) });
             }
         });
 
@@ -2139,7 +2204,20 @@ export default function RestaurantBillGenerator() {
 
     // Handle table click from All Tables grid
     const handleAllTablesTableClick = (tableNum) => {
+        if (lockedTables[tableNum]) {
+            showToast(ts('tableBusy', lang).replace('{n}', tableNum));
+            return;
+        }
         setViewingTableFromAllTables(tableNum);
+        setShowCartDrawer(true);
+    };
+
+    // Home cart icon: same rule for the table that is selected on Home
+    const handleOpenCartFromHome = () => {
+        if (selectedTable && lockedTables[selectedTable]) {
+            showToast(ts('tableBusy', lang).replace('{n}', selectedTable));
+            return;
+        }
         setShowCartDrawer(true);
     };
 
@@ -2147,6 +2225,13 @@ export default function RestaurantBillGenerator() {
     const handleCloseDrawer = () => {
         setShowCartDrawer(false);
         setViewingTableFromAllTables(null);
+    };
+
+    // two people opened the same table at the same moment and the other one was first
+    lockConflictRef.current = (tb) => {
+        setShowCartDrawer(false);
+        setViewingTableFromAllTables(null);
+        showToast(ts('lostTable', lang).replace('{n}', tb));
     };
 
     // "Add More" from the cart drawer: jump straight to Home with this exact
@@ -2304,7 +2389,7 @@ export default function RestaurantBillGenerator() {
             )}
 
             <Header
-                onCartClick={() => setShowCartDrawer(true)}
+                onCartClick={handleOpenCartFromHome}
                 cartItemCount={cartItemCount}
                 currentTab={activeTab}
                 onSettingsClick={() => setShowSettings(true)}
@@ -2440,6 +2525,7 @@ export default function RestaurantBillGenerator() {
                 ) : (
                     /* All Tables Tab - Mobile */
                     <AllTablesGrid
+                        lockedTables={lockedTables}
                         tables={tables}
                         bills={bills}
                         parcels={parcelBadges}
@@ -2462,6 +2548,12 @@ export default function RestaurantBillGenerator() {
                     onClose={() => setShowTableModal(false)}
                     lang={lang}
                 />
+            )}
+
+            {toast && (
+                <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] max-w-[90vw] bg-gray-900 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-lg flex items-center gap-2">
+                    <Lock size={16} className="shrink-0 text-red-300" /> <span>{toast}</span>
+                </div>
             )}
 
             {showCartDrawer && (

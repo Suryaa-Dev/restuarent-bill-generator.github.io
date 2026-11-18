@@ -101,6 +101,18 @@ export async function setMenuItemHidden(id, isHidden) {
     if (error) throw error;
 }
 
+// Saves a new order. `changes` = [{ id, sortOrder }] (only the rows whose position changed).
+export async function saveMenuSortOrders(changes) {
+    const CHUNK = 6;
+    for (let i = 0; i < changes.length; i += CHUNK) {
+        const results = await Promise.all(changes.slice(i, i + CHUNK).map(c =>
+            supabase.from(TABLE).update({ sort_order: c.sortOrder }).eq('id', c.id)
+        ));
+        const failed = results.find(r => r.error);
+        if (failed) throw failed.error;
+    }
+}
+
 export async function deleteMenuItem(id) {
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;

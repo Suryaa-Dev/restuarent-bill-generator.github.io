@@ -281,6 +281,7 @@ export function analyzeBill(bill, tokens, kitchenOf) {
                 qty: unsent,
                 kitchenId,
                 served: false,
+                cartAt: line.pendingSince || line.addedAt || null, // when it was added to the cart (timing log)
                 isParcel: !!line.isParcel, // decides which token (dine-in / parcel) this goes on
             });
         }

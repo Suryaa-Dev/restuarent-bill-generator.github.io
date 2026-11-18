@@ -15,11 +15,13 @@ import MenuIntelligenceTab from '../components/dashboard/MenuIntelligenceTab';
 import CustomerInsightsTab from '../components/dashboard/CustomerInsightsTab';
 import ParcelTab from '../components/dashboard/ParcelTab';
 import ReportsTab from '../components/dashboard/ReportsTab';
+import ServiceTimingTab from '../components/dashboard/ServiceTimingTab';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '📊' },
   { id: 'time', label: 'Time Analytics', icon: '⏰' },
   { id: 'menu', label: 'Menu Intelligence', icon: '🍽️' },
+  { id: 'service', label: 'Service Speed', icon: '⏱️' },
   { id: 'parcel', label: 'Parcel Analysis', icon: '📦' },
   { id: 'customers', label: 'Customer Insights', icon: '👥' },
   { id: 'reports', label: 'Reports', icon: '📄' },
@@ -148,6 +150,7 @@ export default function Dashboard() {
     switch (activeTab) {
       case 'time': return <TimeAnalyticsTab {...props} />;
       case 'menu': return <MenuIntelligenceTab {...props} />;
+      case 'service': return <ServiceTimingTab {...props} />;
       case 'parcel': return <ParcelTab {...props} />;
       case 'customers': return <CustomerInsightsTab {...props} />;
       case 'reports': return <ReportsTab {...props} />;
