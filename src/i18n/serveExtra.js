@@ -27,7 +27,7 @@ const STR = {
         sequenceHint: 'Sequence mode: use ▲ ▼ to move dishes inside a category, or ▲ ▼ on a category heading to move the whole category. The menu uses this order.',
         clearSearchToReorder: 'Clear the search to change the sequence',
         tableBusy: 'Table {n} is open on another device. Try again in a moment.',
-        lostTable: 'Table {n} was opened by another user first.',
+        lostTable: 'Table {n} is now in use on another device, so it was closed here.',
         sentBlocked: 'This is already sent to the kitchen. To reduce it, cancel or update the token below.',
     },
     mr: {
@@ -57,7 +57,7 @@ const STR = {
         sequenceHint: 'क्रम मोड: कॅटेगरीतील पदार्थ हलवण्यासाठी ▲ ▼ वापरा, किंवा संपूर्ण कॅटेगरी हलवण्यासाठी कॅटेगरीच्या नावावरील ▲ ▼ वापरा. मेन्यू याच क्रमाने दिसेल.',
         clearSearchToReorder: 'क्रम बदलण्यासाठी सर्च साफ करा',
         tableBusy: 'टेबल {n} दुसऱ्या डिव्हाइसवर उघडे आहे. थोड्या वेळाने प्रयत्न करा.',
-        lostTable: 'टेबल {n} आधी दुसऱ्या युजरने उघडले.',
+        lostTable: 'टेबल {n} आता दुसऱ्या डिव्हाइसवर वापरात आहे, म्हणून येथे बंद केले.',
         sentBlocked: 'हे आधीच किचनला पाठवले आहे. कमी करण्यासाठी खालील टोकन रद्द करा किंवा अपडेट करा.',
     },
 };

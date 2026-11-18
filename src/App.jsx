@@ -1132,7 +1132,7 @@ export default function RestaurantBillGenerator() {
         toastTimerRef.current = setTimeout(() => setToast(''), 3500);
     };
     const lockConflictRef = useRef(null);
-    const lockedTables = useTableLocks(
+    const { lockedTables, acquireLock } = useTableLocks(
         branch,
         showCartDrawer ? (viewingTableFromAllTables || selectedTable) : null,
         (tb) => lockConflictRef.current?.(tb)
@@ -2203,22 +2203,36 @@ export default function RestaurantBillGenerator() {
     };
 
     // Handle table click from All Tables grid
-    const handleAllTablesTableClick = (tableNum) => {
-        if (lockedTables[tableNum]) {
-            showToast(ts('tableBusy', lang).replace('{n}', tableNum));
-            return;
+    // The database decides who gets a table: acquireLock is atomic, so only one device can open it.
+    const lockOpeningRef = useRef(false);
+    const handleAllTablesTableClick = async (tableNum) => {
+        if (lockOpeningRef.current) return;
+        lockOpeningRef.current = true;
+        try {
+            if (!(await acquireLock(tableNum))) {
+                showToast(ts('tableBusy', lang).replace('{n}', tableNum));
+                return;
+            }
+            setViewingTableFromAllTables(tableNum);
+            setShowCartDrawer(true);
+        } finally {
+            lockOpeningRef.current = false;
         }
-        setViewingTableFromAllTables(tableNum);
-        setShowCartDrawer(true);
     };
 
     // Home cart icon: same rule for the table that is selected on Home
-    const handleOpenCartFromHome = () => {
-        if (selectedTable && lockedTables[selectedTable]) {
-            showToast(ts('tableBusy', lang).replace('{n}', selectedTable));
-            return;
+    const handleOpenCartFromHome = async () => {
+        if (lockOpeningRef.current) return;
+        lockOpeningRef.current = true;
+        try {
+            if (selectedTable && !(await acquireLock(selectedTable))) {
+                showToast(ts('tableBusy', lang).replace('{n}', selectedTable));
+                return;
+            }
+            setShowCartDrawer(true);
+        } finally {
+            lockOpeningRef.current = false;
         }
-        setShowCartDrawer(true);
     };
 
     // Close drawer handler
