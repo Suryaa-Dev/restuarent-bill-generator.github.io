@@ -49,3 +49,51 @@ export function buildLiveTimeline(bill, tokens) {
 
     return { groups, waiting, orderStart: starts.length ? new Date(Math.min(...starts)).toISOString() : null };
 }
+
+// "Proof of service" for a bill that is already CLEARED, built from its item_timeline rows
+// (one row per dish line; rows of the same token form one card, so each token keeps its own times).
+export function buildHistoryTimeline(rows) {
+    const list = rows || [];
+    const byToken = new Map();
+    const waiting = [];
+    list.forEach(r => {
+        if (r.token_no && r.sent_at) {
+            if (!byToken.has(r.token_no)) byToken.set(r.token_no, []);
+            byToken.get(r.token_no).push(r);
+        } else {
+            waiting.push({ name: r.item_name, portion: r.portion, qty: r.qty, isParcel: !!r.is_parcel, cartAt: iso(r.cart_at) });
+        }
+    });
+
+    const groups = [...byToken.entries()].map(([tokenNo, items]) => {
+        const sent = items.map(r => Date.parse(r.sent_at)).sort((a, b) => a - b)[0];
+        return {
+            id: tokenNo,
+            tokenNo,
+            isParcel: items.every(r => r.is_parcel),
+            cancelled: false,
+            sentAt: new Date(sent).toISOString(),
+            items: items.map(r => ({
+                name: r.item_name,
+                portion: r.portion,
+                qty: r.qty,
+                cartAt: iso(r.cart_at) || iso(r.sent_at),
+                sentAt: iso(r.sent_at),
+                servedAt: iso(r.served_at),
+                served: !!r.served_at,
+            })),
+        };
+    }).sort((a, b) => Date.parse(a.sentAt) - Date.parse(b.sentAt));
+
+    const starts = [
+        ...list.map(r => Date.parse(r.order_started_at)),
+        ...list.map(r => Date.parse(r.cart_at)),
+    ].filter(n => !isNaN(n));
+
+    return {
+        groups,
+        waiting,
+        orderStart: starts.length ? new Date(Math.min(...starts)).toISOString() : null,
+        clearedAt: iso(list[0]?.cleared_at),
+    };
+}

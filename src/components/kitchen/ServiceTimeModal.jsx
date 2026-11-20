@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Check, ShoppingCart, Send, HandPlatter, Receipt, Clock } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../i18n/translations';
 import { ts } from '../../i18n/serveExtra';
-import { buildLiveTimeline } from '../../lib/serviceTimeline';
+import { buildLiveTimeline, buildHistoryTimeline } from '../../lib/serviceTimeline';
 
 /* "i" button next to the table number in the cart: a time-stamped record of the order, so a
    disputed wait can be settled with facts. Each token is listed separately, so the same dish
@@ -26,14 +26,16 @@ const Step = ({ icon: Icon, label, time, gap, tone = 'text-gray-800' }) => (
     </div>
 );
 
-export default function ServiceTimeModal({ table, bill, tokens, lang, onClose }) {
+// `history` = item_timeline rows of a CLEARED bill (Order History); otherwise the live bill + tokens are used (cart drawer)
+export default function ServiceTimeModal({ table, bill, tokens, history, lang, onClose }) {
     const [now, setNow] = useState(Date.now());
     useEffect(() => {
         const id = setInterval(() => setNow(Date.now()), 10000);
         return () => clearInterval(id);
     }, []);
 
-    const tl = useMemo(() => buildLiveTimeline(bill, tokens), [bill, tokens]);
+    const tl = useMemo(() => (history ? buildHistoryTimeline(history) : buildLiveTimeline(bill, tokens)), [bill, tokens, history]);
+    const cleared = !!history;
     const nowIso = new Date(now).toISOString();
 
     const servedTimes = tl.groups.flatMap(g => g.items).filter(i => i.servedAt).map(i => Date.parse(i.servedAt));
@@ -51,15 +53,19 @@ export default function ServiceTimeModal({ table, bill, tokens, lang, onClose })
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {empty && <p className="text-center text-gray-400 py-12">{ts('noTimes', lang)}</p>}
+                    {empty && <p className="text-center text-gray-400 py-12">{ts(cleared ? 'noTimesHistory' : 'noTimes', lang)}</p>}
 
                     {!empty && (
                         <div className="rounded-2xl bg-orange-50 border border-orange-100 p-3 space-y-1.5">
                             <Step icon={ShoppingCart} label={ts('orderStarted', lang)} time={clock(tl.orderStart)} />
                             <Step icon={HandPlatter} label={ts('firstServed', lang)} time={clock(firstServed)} gap={span(tl.orderStart, firstServed)} />
-                            <Step icon={Receipt} label={ts('billCleared', lang)} time={ts('notClearedYet', lang)} tone="text-gray-400" />
+                            {cleared ? (
+                                <Step icon={Receipt} label={ts('billCleared', lang)} time={clock(tl.clearedAt)} gap={span(tl.orderStart, tl.clearedAt)} />
+                            ) : (
+                                <Step icon={Receipt} label={ts('billCleared', lang)} time={ts('notClearedYet', lang)} tone="text-gray-400" />
+                            )}
                             <p className="pt-1 text-xs font-bold text-orange-700">
-                                {ts('elapsed', lang)}: {span(tl.orderStart, nowIso)}
+                                {cleared ? `${ts('timeAtTable', lang)}: ${span(tl.orderStart, tl.clearedAt) || '—'}` : `${ts('elapsed', lang)}: ${span(tl.orderStart, nowIso)}`}
                             </p>
                         </div>
                     )}
@@ -87,9 +93,11 @@ export default function ServiceTimeModal({ table, bill, tokens, lang, onClose })
                                         <Step icon={Send} label={ts('tokenSent', lang)} time={clock(it.sentAt)} gap={span(it.cartAt, it.sentAt)} />
                                         {it.served ? (
                                             <Step icon={Check} label={ts('served', lang)} time={clock(it.servedAt)} gap={span(it.sentAt, it.servedAt)} tone="text-green-700" />
-                                        ) : !g.cancelled && (
+                                        ) : !g.cancelled && (cleared ? (
+                                            <Step icon={HandPlatter} label={ts('served', lang)} time={ts('notMarkedServed', lang)} tone="text-gray-400" />
+                                        ) : (
                                             <Step icon={HandPlatter} label={ts('served', lang)} time={`${ts('waiting', lang)} ${span(it.sentAt, nowIso)}`} tone="text-amber-600" />
-                                        )}
+                                        ))}
                                     </div>
                                 ))}
                             </div>
@@ -98,7 +106,7 @@ export default function ServiceTimeModal({ table, bill, tokens, lang, onClose })
 
                     {tl.waiting.length > 0 && (
                         <div className="rounded-2xl border-2 border-dashed border-gray-300 overflow-hidden">
-                            <p className="px-3 py-2 bg-gray-50 border-b text-xs font-bold text-gray-500 uppercase tracking-wide">{ts('notSentYet', lang)}</p>
+                            <p className="px-3 py-2 bg-gray-50 border-b text-xs font-bold text-gray-500 uppercase tracking-wide">{ts(cleared ? 'neverSent' : 'notSentYet', lang)}</p>
                             <div className="divide-y">
                                 {tl.waiting.map((w, i) => (
                                     <div key={i} className="p-3 space-y-1.5">

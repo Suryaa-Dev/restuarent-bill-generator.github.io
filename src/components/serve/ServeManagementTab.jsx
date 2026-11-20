@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Check, ShoppingBag } from 'lucide-react';
-import { t, translateItemName, translatePortion } from '../../i18n/translations';
+import { X, Check } from 'lucide-react';
+import { t, translateCategory, translateItemName, translatePortion } from '../../i18n/translations';
 import { ts } from '../../i18n/serveExtra';
 import { BORDER, TEXT, DEFAULT_TIMER, ageColor, ageMinutes, normalizeConfig } from '../../lib/kds';
 
@@ -10,9 +10,7 @@ import { BORDER, TEXT, DEFAULT_TIMER, ageColor, ageMinutes, normalizeConfig } fr
    (billing screen, table overview and KDS all read/write the same tokens), so a serve
    made anywhere shows up here at once and vice-versa. Serving goes through the SAME
    handler as the Serve button on the token cards (`onServe(tokenId, idx)`).
-   Pending = token active + line not removed + line not served. Dine-in and parcel orders are both
-   shown: dine-in tables in the 2nd pill row, parcel tables in the 3rd row (a table with both
-   appears in both rows, each with its own orders).
+   Pending = token active + line not removed + line not served + dine-in (parcel excluded).
    ===================================================================== */
 
 const portionShort = (p) => (p ? String(p).trim().charAt(0).toUpperCase() : '');
@@ -24,9 +22,9 @@ const qtyLabel = (portions) =>
         .map(([p, q]) => `${q}${portionShort(p)}`)
         .join(' | ');
 
-function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
-    const [sel, setSel] = useState(null);        // { mode: 'item', value } | { mode: 'table', value, parcel }
-    const [modal, setModal] = useState(null);    // { table, parcel, item }
+function ServeManagementTabInner({ tokens, tables, categories, kitchens, onServe, lang }) {
+    const [sel, setSel] = useState(null);        // { mode: 'category' | 'table', value }
+    const [modalTable, setModalTable] = useState(null);
     const [busy, setBusy] = useState(false);
     const [now, setNow] = useState(Date.now());
 
@@ -47,12 +45,12 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
     const lines = useMemo(() => {
         const out = [];
         (tokens || []).forEach(tk => {
-            if (tk.status !== 'active') return;
+            if (tk.status !== 'active' || tk.isParcel) return;
             (tk.items || []).forEach((it, idx) => {
                 if (it.removed || it.served || !(it.qty > 0)) return;
                 const enteredAt = Date.parse(it.addedAt || tk.createdAt) || now;
                 out.push({
-                    tokenId: tk.id, tokenNo: tk.tokenNo, table: tk.tableNumber, parcel: !!tk.isParcel, idx, item: it, enteredAt,
+                    tokenId: tk.id, tokenNo: tk.tokenNo, table: tk.tableNumber, idx, item: it, enteredAt,
                     color: ageColor(enteredAt, now, timerOf(it.kitchenId)),
                 });
             });
@@ -60,26 +58,26 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
         return out.sort((a, b) => a.enteredAt - b.enteredAt);
     }, [tokens, now, timerOf]);
 
-    // table -> lines[] (oldest first), separately for dine-in and for parcel orders
-    const mapFor = (parcel) => {
+    // table -> { oldest line, lines[] }   (lines already oldest-first)
+    const byTable = useMemo(() => {
         const m = new Map();
         lines.forEach(l => {
-            if (l.parcel !== parcel || !tables.includes(l.table)) return;
+            if (!tables.includes(l.table)) return;
             if (!m.has(l.table)) m.set(l.table, []);
             m.get(l.table).push(l);
         });
         return m;
-    };
-    const dineByTable = useMemo(() => mapFor(false), [lines, tables]); // eslint-disable-line react-hooks/exhaustive-deps
-    const parcelByTable = useMemo(() => mapFor(true), [lines, tables]); // eslint-disable-line react-hooks/exhaustive-deps
-    const mapOf = (parcel) => (parcel ? parcelByTable : dineByTable);
+    }, [lines, tables]);
 
-    // tokens of a table of one kind, so a fully served token can sink to the bottom of its table
-    const liveTokensOf = (table, parcel) =>
-        (tokens || []).filter(tk => tk.status === 'active' && !!tk.isParcel === !!parcel && tk.tableNumber === table
+    const pendingTables = useMemo(
+        () => [...byTable.entries()].sort((a, b) => a[1][0].enteredAt - b[1][0].enteredAt).map(([n]) => n),
+        [byTable]
+    );
+    // dine-in tokens of every table, so a fully served token can sink to the bottom of its table
+    const liveTokensOf = (table) =>
+        (tokens || []).filter(tk => tk.status === 'active' && !tk.isParcel && tk.tableNumber === table
             && (tk.items || []).some(i => !i.removed));
-
-    // one pill per dish that still has pending quantity (oldest pending dish first), dine-in or parcel
+    // one pill per dish that still has pending quantity (oldest pending dish first)
     const pendingItems = useMemo(() => {
         const seen = new Set();
         lines.forEach(l => { if (l.item.name) seen.add(l.item.name); });
@@ -89,24 +87,13 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
     // a selection whose items are all served simply disappears
     // (a selected TABLE stays while it still has tokens, so its completed tokens stay visible at the bottom)
     const active = sel && (sel.mode === 'table'
-        ? (mapOf(sel.parcel).has(sel.value) || liveTokensOf(sel.value, sel.parcel).length > 0)
+        ? (byTable.has(sel.value) || liveTokensOf(sel.value).length > 0)
         : pendingItems.includes(sel.value)) ? sel : null;
-    const isOn = (mode, value, parcel = false) =>
-        active?.mode === mode && active.value === value && (mode === 'item' || !!active.parcel === parcel);
+    // every dine-in table is shown; only tables with pending dishes (or the open one) can be tapped
+    const tableList = tables;
 
-    // row 2: every dine-in table (greyed out when nothing to serve). A table that only has a
-    // PARCEL order pending moves down to row 3 instead.
-    const dineRow = tables.filter(n => !(parcelByTable.has(n) && !dineByTable.has(n)) || isOn('table', n, false));
-    // row 3: tables with a pending parcel order (oldest first); an open one stays until closed
-    const parcelRow = useMemo(() => {
-        const list = [...parcelByTable.entries()].sort((a, b) => a[1][0].enteredAt - b[1][0].enteredAt).map(([n]) => n);
-        return active?.mode === 'table' && active.parcel && !list.includes(active.value) ? [...list, active.value] : list;
-    }, [parcelByTable, active]);
-
-    const pick = (mode, value, parcel = false) =>
-        setSel(prev => (prev && prev.mode === mode && prev.value === value && (mode === 'item' || !!prev.parcel === parcel)
-            ? null
-            : (mode === 'item' ? { mode, value } : { mode, value, parcel })));
+    const pick = (mode, value) =>
+        setSel(prev => (prev && prev.mode === mode && prev.value === value ? null : { mode, value }));
 
     // same handler as the token card's Serve button; close the modal only when it really saved
     const serve = async (l) => {
@@ -114,34 +101,32 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
         setBusy(true);
         try {
             const ok = await onServe(l.tokenId, l.idx);
-            if (ok !== false) setModal(null);
+            if (ok !== false) setModalTable(null);
         } finally {
             setBusy(false);
         }
     };
 
-    // item mode: every table that still waits for the selected dish (dine-in and parcel boxes apart)
-    const itemBoxes = useMemo(() => {
+    // result of category mode: tables with unserved items of that category
+    const categoryBoxes = useMemo(() => {
         if (!active || active.mode !== 'item') return [];
         const boxes = [];
-        [false, true].forEach(parcel => {
-            mapOf(parcel).forEach((tl, table) => {
-                const mine = tl.filter(l => l.item.name === active.value);
-                if (!mine.length) return;
-                const portions = {};
-                mine.forEach(l => { const p = l.item.portion || ''; portions[p] = (portions[p] || 0) + l.item.qty; });
-                boxes.push({ table, parcel, portions, oldest: mine[0] });
-            });
+        byTable.forEach((tl, table) => {
+            const mine = tl.filter(l => l.item.name === active.value);
+            if (!mine.length) return;
+            const portions = {};
+            mine.forEach(l => { const p = l.item.portion || ''; portions[p] = (portions[p] || 0) + l.item.qty; });
+            boxes.push({ table, portions, oldest: mine[0] });
         });
         return boxes.sort((a, b) => a.oldest.enteredAt - b.oldest.enteredAt);
-    }, [active, dineByTable, parcelByTable]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [active, byTable]);
 
     // table mode: one card per token (new orders are never merged into an older token);
     // tokens with pending dishes first (oldest first), fully served tokens sink to the bottom
     const tokenCards = useMemo(() => {
         if (!active || active.mode !== 'table') return [];
-        const pend = mapOf(active.parcel).get(active.value) || [];
-        const cards = liveTokensOf(active.value, active.parcel).map(tk => {
+        const pend = byTable.get(active.value) || [];
+        const cards = liveTokensOf(active.value).map(tk => {
             const mine = pend.filter(l => l.tokenId === tk.id);
             return { tk, pending: mine, done: mine.length === 0, oldest: mine[0] };
         });
@@ -150,7 +135,7 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
             ...cards.filter(c => c.done).sort((a, b) => a.tk.seq - b.tk.seq),
         ];
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [active, dineByTable, parcelByTable, tokens]);
+    }, [active, byTable, tokens]);
 
     const DishRow = ({ l, showToken }) => (
         <div className="flex items-center gap-2 px-3 py-2.5">
@@ -174,10 +159,9 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
     );
 
     const pillBase = 'shrink-0 rounded-full whitespace-nowrap font-semibold';
-    // opened from a dish pill: show ONLY that dish for that table
-    const modalLines = modal ? (mapOf(modal.parcel).get(modal.table) || []).filter(l => !modal.item || l.item.name === modal.item) : [];
-    // nothing left to serve (here or on another device) -> drop the modal for good
-    useEffect(() => { if (modal && modalLines.length === 0) setModal(null); }, [modal, modalLines.length]);
+    const modalLines = modalTable ? byTable.get(modalTable) || [] : [];
+    // table has nothing left to serve (here or on another device) -> drop the modal for good
+    useEffect(() => { if (modalTable && !byTable.has(modalTable)) setModalTable(null); }, [modalTable, byTable]);
 
     return (
         <div className="flex flex-col flex-1 w-full overflow-hidden bg-gray-50">
@@ -196,18 +180,18 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
                 </div>
             )}
 
-            {/* 2. dine-in table pills: number only; waiting time on the border (KDS colours).
+            {/* 2. table pills: ALL tables, number only; waiting time on the border (KDS colours).
                    Tables with nothing to serve are greyed out and not clickable. */}
-            {dineRow.length > 0 && (
+            {tableList.length > 0 && (
                 <div className="bg-white border-b px-4 py-3 flex gap-2 overflow-x-auto">
-                    {dineRow.map(n => {
-                        const oldest = dineByTable.get(n)?.[0];
-                        const on = isOn('table', n, false);
+                    {tableList.map(n => {
+                        const oldest = byTable.get(n)?.[0];
+                        const on = active?.mode === 'table' && active.value === n;
                         const enabled = !!oldest || on;
                         return (
                             <button
                                 key={n}
-                                onClick={() => enabled && pick('table', n, false)}
+                                onClick={() => enabled && pick('table', n)}
                                 disabled={!enabled}
                                 aria-disabled={!enabled}
                                 className={`${pillBase} min-w-[44px] h-11 px-3 border-2 ${enabled
@@ -221,40 +205,20 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
                 </div>
             )}
 
-            {/* 3. parcel table pills: only tables with a pending parcel order, parcel-coloured border */}
-            {parcelRow.length > 0 && (
-                <div className="bg-purple-50/60 border-b px-4 py-3 flex items-center gap-2 overflow-x-auto">
-                    <ShoppingBag size={18} className="shrink-0 text-purple-600" aria-label={t('parcelBadge', lang)} />
-                    {parcelRow.map(n => {
-                        const on = isOn('table', n, true);
-                        return (
-                            <button
-                                key={n}
-                                onClick={() => pick('table', n, true)}
-                                className={`${pillBase} min-w-[44px] h-11 px-3 border-2 border-purple-500 ${on ? 'bg-purple-600 text-white' : 'bg-white text-purple-800'}`}
-                            >
-                                {n}
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
-
             {/* 3. result */}
             <div className="flex-1 overflow-y-auto p-4">
-                {!active && (dineByTable.size > 0 || parcelByTable.size > 0) && (
+                {!active && byTable.size > 0 && (
                     <p className="text-center text-sm text-gray-400 py-10">{ts('pickPrompt', lang)}</p>
                 )}
 
                 {active?.mode === 'item' && (
                     <div className="grid grid-cols-3 gap-3">
-                        {itemBoxes.map(b => (
+                        {categoryBoxes.map(b => (
                             <button
-                                key={`${b.table}-${b.parcel}`}
-                                onClick={() => setModal({ table: b.table, parcel: b.parcel, item: active.value })}
-                                className={`relative aspect-square border-2 rounded-xl p-2 flex flex-col items-center justify-center transition-all active:scale-95 ${b.parcel ? 'bg-purple-50 border-purple-400 active:bg-purple-100' : 'bg-gray-50 border-gray-200 active:bg-gray-100'}`}
+                                key={b.table}
+                                onClick={() => setModalTable(b.table)}
+                                className="relative aspect-square bg-gray-50 border-2 border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center transition-all active:bg-gray-100 active:scale-95"
                             >
-                                {b.parcel && <ShoppingBag size={13} className="absolute top-1.5 left-1.5 text-purple-600" aria-label={t('parcelBadge', lang)} />}
                                 <span className="text-lg font-bold text-gray-700 mb-2">T{b.table}</span>
                                 <span className="text-base font-bold text-orange-600 tabular-nums whitespace-nowrap">{qtyLabel(b.portions)}</span>
                             </button>
@@ -271,11 +235,6 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
                             >
                                 <div className="flex items-center justify-between px-3 py-2 border-b border-black/5">
                                     <span className="font-extrabold text-lg text-gray-900">T{active.value} · #{tk.tokenNo}</span>
-                                    {tk.isParcel && !done && (
-                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 bg-purple-600 text-white">
-                                            <ShoppingBag size={10} /> {t('parcelBadge', lang)}
-                                        </span>
-                                    )}
                                     {done && (
                                         <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 bg-green-600 text-white">
                                             <Check size={10} /> {t('tokenCompleted', lang)}
@@ -300,20 +259,13 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
                 )}
             </div>
 
-            {/* modal opened from a dish pill: only that dish of that table */}
-            {modal && modalLines.length > 0 && (
-                <div className="fixed inset-0 bg-black/60 z-[70] flex items-end justify-center" onClick={() => setModal(null)}>
+            {/* table modal (category mode) */}
+            {modalTable && modalLines.length > 0 && (
+                <div className="fixed inset-0 bg-black/60 z-[70] flex items-end justify-center" onClick={() => setModalTable(null)}>
                     <div className="bg-white w-full rounded-t-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b">
-                            <h2 className="text-lg font-bold flex items-center gap-2 min-w-0">
-                                <span className="truncate">{t('tableLabel', lang)} {modal.table} · {modal.item ? translateItemName(modal.item, lang) : ts('pendingDishes', lang)}</span>
-                                {modal.parcel && (
-                                    <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 bg-purple-600 text-white">
-                                        <ShoppingBag size={10} /> {t('parcelBadge', lang)}
-                                    </span>
-                                )}
-                            </h2>
-                            <button onClick={() => setModal(null)} aria-label={ts('close', lang)} className="p-2 rounded-full bg-gray-100 shrink-0">
+                        <div className="flex items-center justify-between px-4 py-3 border-b">
+                            <h2 className="text-lg font-bold">{t('tableLabel', lang)} {modalTable} · {ts('pendingDishes', lang)}</h2>
+                            <button onClick={() => setModalTable(null)} aria-label={ts('close', lang)} className="p-2 rounded-full bg-gray-100">
                                 <X size={18} />
                             </button>
                         </div>

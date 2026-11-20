@@ -1,15 +1,42 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, X, Search, Calendar, IndianRupee, RefreshCw, ShoppingBag, Trash2, CheckSquare, Square, Check, Loader2 } from 'lucide-react';
+import { ArrowLeft, X, Search, Calendar, IndianRupee, RefreshCw, ShoppingBag, Trash2, CheckSquare, Square, Check, Loader2, Info } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { getSavedBranch, branchLabel, getSavedLanguage } from '../lib/branchMenu';
 import { translateItemName, translatePortion } from '../i18n/translations';
 import { fetchAllRows } from '../lib/fetchAll';
+import { ts } from '../i18n/serveExtra';
+import ServiceTimeModal from '../components/kitchen/ServiceTimeModal';
 import { resolveRange, formatISTDateLabel, formatISTTime } from '../lib/time';
 
 const PAGE_SIZE = 100; // rows rendered at a time (everything is still fetched, just shown in chunks)
 const formatDateLabel = formatISTDateLabel;
 const formatTimeLabel = formatISTTime;
+
+// A table can have dine-in AND parcel food on one bill. Kitchen-mode lines carry isParcel;
+// older / Normal-mode bills only have the bill-level is_parcel flag.
+//   'parcel' = every line parcel, 'mixed' = both kinds, 'dinein' = no parcel line
+function billKind(bill) {
+    const items = bill.items || [];
+    const parcelLines = items.filter(i => i.isParcel).length;
+    if (items.length > 0 && parcelLines === items.length) return 'parcel';
+    if (parcelLines > 0) return 'mixed';
+    return bill.is_parcel ? 'parcel' : 'dinein';
+}
+const lineTotal = (list) => list.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.qty) || 0), 0);
+
+const KindChips = ({ kind, className = '' }) => (
+    <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
+        {kind !== 'parcel' && (
+            <span className="inline-flex items-center bg-orange-100 text-orange-700 text-[11px] font-semibold rounded-full px-2 py-0.5">Dine-in</span>
+        )}
+        {kind !== 'dinein' && (
+            <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 text-[11px] font-semibold rounded-full px-2 py-0.5">
+                <ShoppingBag size={10} /> Parcel
+            </span>
+        )}
+    </span>
+);
 
 export default function OrderHistory() {
     const navigate = useNavigate();
@@ -19,6 +46,24 @@ export default function OrderHistory() {
     const [bills, setBills] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedBill, setSelectedBill] = useState(null);
+    const [timeModal, setTimeModal] = useState(null); // { loading } | { rows, table } | { error }
+
+    // service times of a cleared bill (written to item_timeline when the bill was cleared)
+    const openTimes = async (bill) => {
+        setTimeModal({ loading: true });
+        try {
+            const { data, error } = await supabase
+                .from('item_timeline')
+                .select('token_no, is_parcel, item_name, portion, qty, cart_at, sent_at, served_at, cleared_at, order_started_at')
+                .eq('bill_id', bill.id)
+                .order('sent_at', { ascending: true });
+            if (error) throw error;
+            setTimeModal({ rows: data || [], table: bill.table_number });
+        } catch (err) {
+            console.error('Loading service times failed:', err);
+            setTimeModal({ error: true });
+        }
+    };
 
     const [dateRange, setDateRange] = useState('today');
     const [customStartDate, setCustomStartDate] = useState('');
@@ -26,7 +71,7 @@ export default function OrderHistory() {
     const [minAmount, setMinAmount] = useState('');
     const [maxAmount, setMaxAmount] = useState('');
     const [tableFilter, setTableFilter] = useState('');
-    const [typeFilter, setTypeFilter] = useState('all'); // all | parcel | dinein
+    const [typeFilter, setTypeFilter] = useState('all'); // all | dinein | parcel | mixed (dine-in + parcel on one bill)
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [showFilters, setShowFilters] = useState(false);
 
@@ -74,8 +119,7 @@ export default function OrderHistory() {
             if (minAmount !== '' && bill.total < parseFloat(minAmount)) return false;
             if (maxAmount !== '' && bill.total > parseFloat(maxAmount)) return false;
             if (tableFilter !== '' && String(bill.table_number) !== tableFilter.trim()) return false;
-            if (typeFilter === 'parcel' && !bill.is_parcel) return false;
-            if (typeFilter === 'dinein' && bill.is_parcel) return false;
+            if (typeFilter !== 'all' && billKind(bill) !== typeFilter) return false;
             return true;
         });
     }, [bills, minAmount, maxAmount, tableFilter, typeFilter]);
@@ -285,12 +329,12 @@ export default function OrderHistory() {
                         <div>
                             <label className="text-xs font-semibold text-gray-500 mb-1 block">Order Type</label>
                             <div className="flex gap-2">
-                                {[['all', 'All'], ['dinein', 'Dine-in'], ['parcel', 'Parcel']].map(([id, label]) => (
+                                {[['all', 'All'], ['dinein', 'Dine-in'], ['parcel', 'Parcel'], ['mixed', 'Both']].map(([id, label]) => (
                                     <button
                                         key={id}
                                         onClick={() => setTypeFilter(id)}
                                         className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${typeFilter === id
-                                            ? (id === 'parcel' ? 'bg-purple-600 text-white border-purple-600' : 'bg-orange-500 text-white border-orange-500')
+                                            ? (id === 'parcel' ? 'bg-purple-600 text-white border-purple-600' : id === 'mixed' ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white border-transparent' : 'bg-orange-500 text-white border-orange-500')
                                             : 'bg-white text-gray-600 border-gray-200'}`}
                                     >
                                         {label}
@@ -358,11 +402,7 @@ export default function OrderHistory() {
                                                 {(bill.items || []).length} item{(bill.items || []).length === 1 ? '' : 's'}
                                                 {itemsPreview(bill) && <span className="text-gray-400"> · {itemsPreview(bill)}</span>}
                                             </p>
-                                            {bill.is_parcel && (
-                                                <span className="inline-flex items-center gap-1 mt-1 bg-purple-100 text-purple-700 text-[11px] font-semibold rounded-full px-2 py-0.5">
-                                                    <ShoppingBag size={10} /> Parcel
-                                                </span>
-                                            )}
+                                            <KindChips kind={billKind(bill)} className="mt-1" />
                                         </div>
                                     </div>
                                     <p className="text-lg font-bold text-orange-600 shrink-0">₹{bill.total}</p>
@@ -390,12 +430,15 @@ export default function OrderHistory() {
                             <div>
                                 <h2 className="text-lg font-bold flex items-center gap-2">
                                     Table {selectedBill.table_number}
-                                    {selectedBill.is_parcel && (
-                                        <span className="inline-flex items-center gap-1 bg-purple-600 text-white text-xs font-semibold rounded-full px-2 py-0.5">
-                                            <ShoppingBag size={11} /> Parcel
-                                        </span>
-                                    )}
+                                    <button
+                                        onClick={() => openTimes(selectedBill)}
+                                        aria-label={ts('serviceTimes', lang)}
+                                        className="p-1.5 rounded-full bg-blue-50 text-blue-600 active:bg-blue-100"
+                                    >
+                                        {timeModal?.loading ? <Loader2 size={18} className="animate-spin" /> : <Info size={18} />}
+                                    </button>
                                 </h2>
+                                <KindChips kind={billKind(selectedBill)} className="mt-1" />
                                 <p className="text-xs text-gray-500">
                                     {formatDateLabel(selectedBill.completed_at)} · {formatTimeLabel(selectedBill.completed_at)}
                                 </p>
@@ -404,20 +447,41 @@ export default function OrderHistory() {
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4">
-                            {(selectedBill.items || []).map((item, idx) => (
-                                <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-100">
-                                    <div>
-                                        <p className="font-medium text-sm">
-                                            <span className="text-gray-400 mr-1">{idx + 1}.</span>
-                                            {translateItemName(item.name, lang)}
-                                        </p>
-                                        <p className="text-xs text-gray-500">
-                                            {translatePortion(item.portion, lang)} · ₹{item.price} each · x{item.qty}
-                                        </p>
+                            {(() => {
+                                const all = selectedBill.items || [];
+                                const kind = billKind(selectedBill);
+                                const isP = (i) => (kind === 'parcel' ? true : kind === 'mixed' ? !!i.isParcel : false);
+                                const sections = kind === 'mixed'
+                                    ? [
+                                        { key: 'dine', title: 'Dine-in', list: all.filter(i => !isP(i)), box: 'bg-orange-50 text-orange-700' },
+                                        { key: 'parcel', title: 'Parcel', list: all.filter(isP), box: 'bg-purple-50 text-purple-700' },
+                                    ]
+                                    : [{ key: 'all', title: null, list: all }];
+                                return sections.map(sec => (
+                                    <div key={sec.key} className={sec.title ? 'mb-4' : ''}>
+                                        {sec.title && (
+                                            <div className={`flex items-center justify-between rounded-lg px-3 py-1.5 mb-1 text-xs font-bold uppercase tracking-wide ${sec.box}`}>
+                                                <span className="flex items-center gap-1">{sec.key === 'parcel' && <ShoppingBag size={12} />} {sec.title}</span>
+                                                <span>₹{lineTotal(sec.list)}</span>
+                                            </div>
+                                        )}
+                                        {sec.list.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-100">
+                                                <div>
+                                                    <p className="font-medium text-sm">
+                                                        <span className="text-gray-400 mr-1">{idx + 1}.</span>
+                                                        {translateItemName(item.name, lang)}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500">
+                                                        {translatePortion(item.portion, lang)} · ₹{item.price} each · x{item.qty}
+                                                    </p>
+                                                </div>
+                                                <p className="font-semibold text-gray-800">₹{item.price * item.qty}</p>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <p className="font-semibold text-gray-800">₹{item.price * item.qty}</p>
-                                </div>
-                            ))}
+                                ));
+                            })()}
                         </div>
 
                         <div className="border-t p-4 space-y-3">
@@ -432,6 +496,24 @@ export default function OrderHistory() {
                                 <Trash2 size={18} /> Delete this bill
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* service times of the open bill (same sheet as the cart drawer's "i") */}
+            {timeModal?.rows && (
+                <ServiceTimeModal
+                    table={timeModal.table}
+                    history={timeModal.rows}
+                    lang={lang}
+                    onClose={() => setTimeModal(null)}
+                />
+            )}
+            {timeModal?.error && (
+                <div className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-6" onClick={() => setTimeModal(null)}>
+                    <div className="bg-white rounded-2xl p-5 max-w-sm text-sm text-gray-700 space-y-3" onClick={e => e.stopPropagation()}>
+                        <p>Could not load the service times. Check your connection (and that item_timeline.sql has been run), then try again.</p>
+                        <button onClick={() => setTimeModal(null)} className="w-full h-11 rounded-xl bg-gray-100 font-bold">OK</button>
                     </div>
                 </div>
             )}

@@ -1079,6 +1079,7 @@ export default function RestaurantBillGenerator() {
     const billEchoRef = useRef(createEchoFilter());
     const billRowIdRef = useRef({});   // table -> id of its active bill row (skips a lookup per save)
     const saveBillRef = useRef(null);  // always the latest saveBillToSupabase (branch etc. never stale)
+    const refreshBillsRef = useRef(null); // set below: re-reads all bills from the server without a spinner
     const saveQueueRef = useRef(null);
     if (!saveQueueRef.current) {
         saveQueueRef.current = createKeyedQueue((table, p) => saveBillRef.current(Number(table), p.items, p.addToQueue));
@@ -1223,6 +1224,7 @@ export default function RestaurantBillGenerator() {
     // live token changes from any device (and, next phase, from the KDS)
     useEffect(() => {
         if (!branch || !kitchenMode) return;
+        let tokensSubscribedOnce = false;
 
         const channel = supabase
             .channel(`kot-realtime-${branch}`)
@@ -1242,7 +1244,13 @@ export default function RestaurantBillGenerator() {
                     upsertToken(tk);
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                // missed events are never replayed after a dropped connection: read the tokens again
+                if (status === 'SUBSCRIBED') {
+                    if (tokensSubscribedOnce) fetchActiveTokens(branch).then(tks => updateTokens(() => tks)).catch(() => {});
+                    tokensSubscribedOnce = true;
+                }
+            });
 
         return () => { supabase.removeChannel(channel); };
     }, [branch, kitchenMode]);
@@ -1375,6 +1383,7 @@ export default function RestaurantBillGenerator() {
     // Real-time subscription to bill changes (scoped to the selected branch)
     useEffect(() => {
         if (!branch) return;
+        let billsSubscribedOnce = false;
 
         const channel = supabase
             .channel(`bills-realtime-${branch}`)
@@ -1414,9 +1423,26 @@ export default function RestaurantBillGenerator() {
             )
             .subscribe((status) => {
                 console.log('📡 Realtime status:', status);
+                // the live connection drops while the app sleeps in the background and anything
+                // that happened meanwhile is never replayed: read the bills again on reconnect
+                if (status === 'SUBSCRIBED') {
+                    if (billsSubscribedOnce) refreshBillsRef.current?.();
+                    billsSubscribedOnce = true;
+                }
             });
 
+        // coming back to the app / the network returning / a slow safety net: re-sync quietly
+        const resync = () => { if (document.visibilityState === 'visible') refreshBillsRef.current?.(); };
+        document.addEventListener('visibilitychange', resync);
+        window.addEventListener('focus', resync);
+        window.addEventListener('online', resync);
+        const safety = setInterval(resync, 30000);
+
         return () => {
+            document.removeEventListener('visibilitychange', resync);
+            window.removeEventListener('focus', resync);
+            window.removeEventListener('online', resync);
+            clearInterval(safety);
             supabase.removeChannel(channel);
         };
     }, [branch]);
@@ -1485,6 +1511,36 @@ export default function RestaurantBillGenerator() {
             commitBills(initialBills);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Same as loadBillsFromSupabase but silent, and it never overwrites a table this device is still
+    // saving, or anything while offline edits are waiting to be sent.
+    refreshBillsRef.current = async () => {
+        if (!branch || !navigator.onLine || pendingSaves.length > 0) return;
+        try {
+            const { data, error } = await supabase
+                .from('bills').select('*').eq('status', 'active').eq('branch', branch);
+            if (error) throw error;
+
+            const nextParcels = { ...parcelsRef.current };
+            let parcelsChanged = false;
+            commitBills(prev => {
+                const next = { ...prev };
+                let changed = false;
+                tables.forEach(num => {
+                    if (saveQueueRef.current.busy(String(num))) return; // our newer edit is on its way
+                    const row = data.find(b => b.table_number === num);
+                    const items = row ? row.items : [];
+                    if (JSON.stringify(prev[num] || []) !== JSON.stringify(items)) { next[num] = items; changed = true; }
+                    const isParcel = !!(row && row.is_parcel);
+                    if (!!nextParcels[num] !== isParcel) { nextParcels[num] = isParcel; parcelsChanged = true; }
+                });
+                return changed ? next : prev; // nothing new: no re-render
+            });
+            if (parcelsChanged) setParcelsBoth(nextParcels);
+        } catch (err) {
+            console.error('Quiet bill refresh failed:', err);
         }
     };
 
