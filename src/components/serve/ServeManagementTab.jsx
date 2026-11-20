@@ -246,21 +246,41 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
                     <p className="text-center text-sm text-gray-400 py-10">{ts('pickPrompt', lang)}</p>
                 )}
 
-                {active?.mode === 'item' && (
-                    <div className="grid grid-cols-3 gap-3">
-                        {itemBoxes.map(b => (
-                            <button
-                                key={`${b.table}-${b.parcel}`}
-                                onClick={() => setModal({ table: b.table, parcel: b.parcel, item: active.value })}
-                                className={`relative aspect-square border-2 rounded-xl p-2 flex flex-col items-center justify-center transition-all active:scale-95 ${b.parcel ? 'bg-purple-50 border-purple-400 active:bg-purple-100' : 'bg-gray-50 border-gray-200 active:bg-gray-100'}`}
-                            >
-                                {b.parcel && <ShoppingBag size={13} className="absolute top-1.5 left-1.5 text-purple-600" aria-label={t('parcelBadge', lang)} />}
-                                <span className="text-lg font-bold text-gray-700 mb-2">T{b.table}</span>
-                                <span className="text-base font-bold text-orange-600 tabular-nums whitespace-nowrap">{qtyLabel(b.portions)}</span>
-                            </button>
-                        ))}
-                    </div>
-                )}
+                {active?.mode === 'item' && (() => {
+                    const dineBoxes = itemBoxes.filter(b => !b.parcel);
+                    const parcelBoxes = itemBoxes.filter(b => b.parcel);
+                    const grid = (list) => (
+                        <div className="grid grid-cols-3 gap-3">
+                            {list.map(b => (
+                                <button
+                                    key={`${b.table}-${b.parcel}`}
+                                    onClick={() => setModal({ table: b.table, parcel: b.parcel, item: active.value })}
+                                    className={`relative aspect-square border-2 rounded-xl p-2 flex flex-col items-center justify-center transition-all active:scale-95 ${b.parcel ? 'bg-purple-50 border-purple-400 active:bg-purple-100' : 'bg-gray-50 border-gray-200 active:bg-gray-100'}`}
+                                >
+                                    {b.parcel && <ShoppingBag size={13} className="absolute top-1.5 left-1.5 text-purple-600" aria-label={t('parcelBadge', lang)} />}
+                                    <span className="text-lg font-bold text-gray-700 mb-2">T{b.table}</span>
+                                    <span className="text-base font-bold text-orange-600 tabular-nums whitespace-nowrap">{qtyLabel(b.portions)}</span>
+                                </button>
+                            ))}
+                        </div>
+                    );
+                    return (
+                        <>
+                            {dineBoxes.length > 0 && grid(dineBoxes)}
+                            {/* parcel boxes always start on their own row, below a clear gap, never mixed in with dine-in */}
+                            {parcelBoxes.length > 0 && (
+                                <div className={dineBoxes.length > 0 ? 'mt-8' : ''}>
+                                    <div className="flex items-center gap-2 mb-3 text-purple-700">
+                                        <ShoppingBag size={16} />
+                                        <span className="text-xs font-bold uppercase tracking-wide">{t('parcelBadge', lang)}</span>
+                                        <span className="flex-1 h-px bg-purple-200" />
+                                    </div>
+                                    {grid(parcelBoxes)}
+                                </div>
+                            )}
+                        </>
+                    );
+                })()}
 
                 {active?.mode === 'table' && (
                     <div className="space-y-3">
