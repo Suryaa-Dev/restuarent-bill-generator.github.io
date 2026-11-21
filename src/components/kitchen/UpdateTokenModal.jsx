@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { X, Plus, Minus, Search, Lock, ListPlus, ShoppingBag } from 'lucide-react';
-import { t, translateCategory, translateItemName, translatePortion } from '../../i18n/translations';
+import { t, translateItemName, translatePortion } from '../../i18n/translations';
+import { ts } from '../../i18n/serveExtra';
+import { CategoryPills, MenuItem, flattenRatePickerItems } from '../menu/MenuCards';
 import { lineKey } from '../../lib/kitchen';
 import { getCategories } from '../../lib/menu';
 
@@ -28,78 +30,86 @@ const makeNewRow = (opt, qty, replacedFrom) => ({
 // drop editor-only fields before saving
 const strip = ({ uid, origQty, wasRemoved, isNew, ...rest }) => rest;
 
-/* ---------- menu picker (replace / add) ---------- */
+/* ---------- menu picker (Add more) ----------
+   Same look as the home screen: category pills (first = favourites) and the same item cards.
+   It stays open so several dishes can be added in a row; "Done" goes back to the token.   */
 
-function MenuPicker({ items, lang, onPick, onClose }) {
+function MenuPicker({ items, favoriteItems, rows, addedCount, lang, onAdd, onClose }) {
     const [q, setQ] = useState('');
-    const [cat, setCat] = useState(null);
-    const pickable = useMemo(() => items.filter(i => i.kitchenId), [items]);
+    const [cat, setCat] = useState(null); // null = favourites, like the home screen
+    const pickable = useMemo(() => items.filter(i => i.kitchenId && !i.isHidden), [items]);
     const categories = useMemo(() => getCategories(pickable), [pickable]);
+    const favourites = useMemo(() => (favoriteItems || []).filter(i => i.kitchenId), [favoriteItems]);
 
-    const visible = useMemo(() => {
+    const shown = useMemo(() => {
         const s = q.trim().toLowerCase();
-        return pickable.filter(i =>
-            (!cat || i.category === cat) &&
-            (!s || i.name.toLowerCase().includes(s) || (i.nameMr || '').includes(q.trim()))
-        );
-    }, [pickable, q, cat]);
+        const base = s
+            ? pickable.filter(i => i.name.toLowerCase().includes(s) || (i.nameMr || '').includes(q.trim()))
+            : cat ? pickable.filter(i => i.category === cat) : favourites;
+        return flattenRatePickerItems(base);
+    }, [pickable, favourites, q, cat]);
+    const ratePickerOnly = shown.length > 0 && shown.every(i => i.ratePicker);
+
+    // quantity of a dish on this token right now (existing + newly added), like the home cards show for the bill
+    const qtyOf = (name, portion, category) => rows
+        .filter(r => !r.removed && r.name === name && r.portion === portion && (!r.category || !category || r.category === category))
+        .reduce((sum, r) => sum + r.qty, 0);
+
+    const add = (name, portion, price, category) => {
+        const item = pickable.find(i => i.name === name && i.category === category) || pickable.find(i => i.name === name);
+        if (!item) return;
+        onAdd({ name, category, portion, price, kitchenId: item.kitchenId || null });
+    };
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[80] flex items-end md:items-center justify-center">
-            <div className="bg-white w-full md:w-[30rem] h-[85vh] md:h-[80vh] rounded-t-2xl md:rounded-2xl flex flex-col overflow-hidden">
-                <div className="flex justify-between items-center p-4 border-b">
-                    <h2 className="text-lg font-bold">{t('pickItem', lang)}</h2>
-                    <button onClick={onClose} aria-label={t('close', lang)}><X size={24} /></button>
-                </div>
-
-                <div className="p-4 pb-2 space-y-3 border-b">
-                    <div className="relative">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <div className="bg-white w-full md:w-[32rem] h-[92vh] md:h-[85vh] rounded-t-3xl md:rounded-2xl flex flex-col overflow-hidden">
+                <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                    <h2 className="text-lg font-bold shrink-0">{t('pickItem', lang)}</h2>
+                    <div className="relative flex-1 min-w-0">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                             value={q}
                             onChange={(e) => setQ(e.target.value)}
                             placeholder={t('searchMenu', lang)}
-                            className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                            className="w-full h-10 border border-gray-300 rounded-full pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
                         />
                     </div>
-                    <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-                        {[null, ...categories].map(c => (
-                            <button
-                                key={c ?? '__all__'}
-                                onClick={() => setCat(c)}
-                                className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap font-medium ${cat === c ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700'}`}
-                            >
-                                {c ? translateCategory(c, lang) : t('allCategories', lang)}
-                            </button>
-                        ))}
-                    </div>
+                    <button onClick={onClose} aria-label={t('close', lang)} className="p-1 shrink-0"><X size={24} /></button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                    {visible.length === 0 && <p className="text-center text-gray-400 py-10">{t('noMenuItems', lang)}</p>}
-                    {visible.map(item => (
-                        <div key={item.id} className="p-3 rounded-xl border border-gray-200">
-                            <p className="font-semibold text-gray-800">{translateItemName(item.name, lang)}</p>
-                            <p className="text-xs text-gray-500">{translateCategory(item.category, lang)}</p>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                                {item.options.map((o, i) => (
-                                    <button
-                                        key={i}
-                                        onClick={() => onPick({
-                                            name: item.name,
-                                            category: item.category,
-                                            portion: o.portion,
-                                            price: o.price,
-                                            kitchenId: item.kitchenId || null,
-                                        })}
-                                        className="px-3 py-2 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 text-sm font-bold active:bg-orange-100"
-                                    >
-                                        {translatePortion(o.portion, lang)} ₹{o.price}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                {!q.trim() && (
+                    <CategoryPills
+                        categories={categories}
+                        selectedCategory={cat}
+                        onSelectCategory={setCat}
+                        lang={lang}
+                        className="bg-white border-y px-4 py-3 flex gap-2 overflow-x-auto shrink-0"
+                    />
+                )}
+
+                <div className={`flex-1 overflow-y-auto grid ${ratePickerOnly ? 'grid-cols-3' : 'grid-cols-2'} gap-3 p-3 content-start bg-white`}>
+                    {shown.length === 0 && (
+                        <p className="col-span-full text-center text-gray-400 py-12">
+                            {q.trim() || cat ? t('noMenuItems', lang) : t('noFavoritesYet', lang)}
+                        </p>
+                    )}
+                    {shown.map((item, idx) => (
+                        <MenuItem
+                            key={`${item.id}-${idx}`}
+                            item={item}
+                            onAddItem={add}
+                            currentQty={qtyOf(item.name, item.options[0].portion, item.category)}
+                            getQty={qtyOf}
+                            lang={lang}
+                        />
                     ))}
+                </div>
+
+                <div className="border-t p-3 bg-white">
+                    <button onClick={onClose} className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-bold active:bg-blue-700">
+                        {addedCount > 0 ? ts('doneAdded', lang).replace('{n}', addedCount) : ts('doneAdding', lang)}
+                    </button>
                 </div>
             </div>
         </div>
@@ -108,7 +118,7 @@ function MenuPicker({ items, lang, onPick, onClose }) {
 
 /* ---------- editor (styled like the cart drawer: Add More, + / -, item names) ---------- */
 
-export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClose }) {
+export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang, onSave, onClose }) {
     const [rows, setRows] = useState(() =>
         token.items.map(it => ({ ...it, uid: nextUid(), origQty: it.qty, wasRemoved: !!it.removed, isNew: false }))
     );
@@ -128,7 +138,6 @@ export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClo
             if (same) return rs.map(r => (r.uid === same.uid ? { ...r, qty: r.qty + 1 } : r));
             return [...rs, makeNewRow(opt, 1)];
         });
-        setPicking(false);
     };
 
     const activeRows = rows.filter(r => !r.removed);
@@ -294,7 +303,15 @@ export default function UpdateTokenModal({ token, menuItems, lang, onSave, onClo
             </div>
 
             {picking && (
-                <MenuPicker items={menuItems} lang={lang} onPick={handlePick} onClose={() => setPicking(false)} />
+                <MenuPicker
+                    items={menuItems}
+                    favoriteItems={favoriteItems}
+                    rows={rows}
+                    addedCount={rows.filter(r => r.isNew && !r.removed).reduce((n, r) => n + r.qty, 0)}
+                    lang={lang}
+                    onAdd={handlePick}
+                    onClose={() => setPicking(false)}
+                />
             )}
         </>
     );
