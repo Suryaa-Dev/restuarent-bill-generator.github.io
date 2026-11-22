@@ -30,17 +30,17 @@ export default function KdsItemRow({ name, entry, options, colorKey, flag, onCli
             title={full}
             className={`w-full flex items-center gap-2 bg-white rounded-lg border-2 px-2 py-1 text-left active:bg-gray-50 ${BORDER[colorKey || 'none']}`}
         >
-            <span className="flex-1 min-w-0 truncate text-[13px] font-semibold text-gray-900">{shortName(full)}</span>
+            <span className="flex-1 min-w-0 truncate text-[15px] font-bold text-gray-900">{shortName(full)}</span>
             {flag && (
-                <span className={`shrink-0 flex items-center text-[11px] font-extrabold tabular-nums ${up ? 'text-green-600' : 'text-red-600'}`}>
-                    <Icon size={11} strokeWidth={3} />{flag.n}
+                <span className={`shrink-0 flex items-center text-[13px] font-extrabold tabular-nums ${up ? 'text-green-600' : 'text-red-600'}`}>
+                    <Icon size={13} strokeWidth={3} />{flag.n}
                 </span>
             )}
             <span className="shrink-0 flex items-baseline gap-2">
                 {list.map(([p, q]) => (
                     <span key={p} className="whitespace-nowrap">
-                        <span className="text-[15px] font-extrabold tabular-nums text-gray-900">{q}</span>
-                        <span className="text-[10px] font-medium text-gray-500 ml-0.5">{translatePortion(p, lang)}</span>
+                        <span className="text-[17px] font-extrabold tabular-nums text-gray-900">{q}</span>
+                        <span className="text-[12px] font-bold text-gray-500 ml-0.5">{translatePortion(p, lang)}</span>
                     </span>
                 ))}
             </span>
