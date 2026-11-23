@@ -7,6 +7,8 @@ const SIZE = {
     // main boxes: size follows BOTH width and height so it always fits a short landscape phone
     xl: { num: 'text-[clamp(1.6rem,min(4.4vw,10vh),3rem)]', label: 'text-[clamp(.7rem,1.4vw,.95rem)]', gap: 'gap-4 md:gap-7' },
     lg: { num: 'text-[clamp(1.5rem,3.4vw,2.4rem)]', label: 'text-xs md:text-sm', gap: 'gap-5 md:gap-8' },
+    // compact totals (item page): smaller numbers, tighter gaps
+    md: { num: 'text-[clamp(1.15rem,2.3vw,1.6rem)]', label: 'text-[11px] md:text-xs', gap: 'gap-3 md:gap-5' },
 };
 
 // Quantities as big numbers with a small portion label underneath.

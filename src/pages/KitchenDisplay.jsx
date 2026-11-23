@@ -322,7 +322,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
             ) : (
                 <main className="flex-1 min-h-0">
                     {selected ? (
-                        <ItemPage itemKey={selected.key} name={selected.name} lines={lines} menuByKey={menuByKey} now={now} timer={config.timer} lang={lang} onBack={() => goTab('all')} />
+                        <ItemPage itemKey={selected.key} name={selected.name} lines={lines} menuByKey={menuByKey} now={now} timer={config.timer} lang={lang} onServe={onServe ? serve : undefined} onBack={() => goTab('all')} />
                     ) : tab === 'batches' && batches ? (
                         <BatchesTab batches={batches} timer={config.timer} lang={lang} />
                     ) : tab === 'all' ? (

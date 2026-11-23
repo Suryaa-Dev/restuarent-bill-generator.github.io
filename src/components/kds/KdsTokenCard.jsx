@@ -22,7 +22,7 @@ const changeNote = (it, lang) => {
     isBold(item) lets a caller emphasise the selected item / category.
     onServe(idx) — optional. When given, every pending line gets a [Serve] button so the chef can
     mark it served on behalf of a waiter who forgot.                                          */
-export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold, onServe, lang }) {
+export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold, onServe, lang, showTime = true }) {
     const color = ageColor(oldest, now, timer);
     return (
         <div className={`rounded-2xl border-2 bg-white overflow-hidden shadow-sm ${BORDER[color]}`}>
@@ -38,7 +38,7 @@ export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold,
                 </div>
                 <div className="text-right leading-tight shrink-0">
                     <AgeText oldest={oldest} now={now} colorKey={color} lang={lang} className="text-sm" />
-                    <p className="text-[11px] text-gray-400">{fmtTime(token.createdAt)}</p>
+                    {showTime && <p className="text-[11px] text-gray-400">{fmtTime(token.createdAt)}</p>}
                 </div>
             </div>
 

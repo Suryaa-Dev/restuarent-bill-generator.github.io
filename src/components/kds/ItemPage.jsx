@@ -14,33 +14,29 @@ const THEME = {
     parcel: { panel: 'bg-purple-50 border-purple-100', chip: 'bg-purple-100 text-purple-700', text: 'text-purple-700', Icon: ShoppingBag },
 };
 
-function Column({ kind, title, count, entry, options, now, timer, lang, children, empty }) {
+function Column({ kind, entry, options, now, timer, lang, children, empty }) {
     const th = THEME[kind];
     const color = entry ? ageColor(entry.oldest, now, timer) : 'none';
     return (
         <div className={`flex flex-col min-w-0 min-h-0 rounded-2xl border p-2.5 ${th.panel}`}>
-            <div className="shrink-0 flex items-center gap-2 mb-2">
-                <span className={`w-7 h-7 rounded-lg flex items-center justify-center ${th.chip}`}><th.Icon size={16} /></span>
-                <p className={`text-sm font-bold uppercase tracking-wide ${th.text}`}>
-                    {title} <span className="font-semibold opacity-70">· {count}</span>
-                </p>
-                {entry && <AgeText oldest={entry.oldest} now={now} colorKey={color} lang={lang} className="text-sm ml-auto" />}
-            </div>
-
-            {/* totals: fixed, they never scroll */}
-            <div className={`shrink-0 rounded-xl border-2 bg-white shadow-sm px-3 py-2 ${BORDER[color]}`}>
-                <PortionBlocks portions={entry?.portions} options={options} showZero lang={lang} size="lg" />
+            {/* one compact row: icon (tables = blue, parcel = purple) · totals · oldest wait. It never scrolls. */}
+            <div className="shrink-0 flex items-center gap-2">
+                <span className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${th.chip}`}><th.Icon size={17} /></span>
+                <div className={`flex-1 min-w-0 rounded-xl border-2 bg-white shadow-sm px-2.5 py-1 ${BORDER[color]}`}>
+                    <PortionBlocks portions={entry?.portions} options={options} showZero lang={lang} size="md" />
+                </div>
+                {entry && <AgeText oldest={entry.oldest} now={now} colorKey={color} lang={lang} className="text-sm shrink-0" />}
             </div>
 
             {/* only this list scrolls */}
-            <div className="mt-2.5 flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-1">
+            <div className="mt-2 flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-1">
                 {empty ? <p className="text-center text-sm text-gray-400 py-8">{t('kdsNothingPending', lang)}</p> : children}
             </div>
         </div>
     );
 }
 
-export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, timer, lang, onBack }) {
+export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, timer, lang, onServe, onBack }) {
     const options = menuByKey.get(key)?.options?.map(o => o.portion) || [];
 
     const mine = useMemo(() => lines.filter(l => l.key === key), [lines, key]);
@@ -77,7 +73,7 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
 
             <div className="flex-1 min-h-0 grid grid-cols-2 gap-3 md:gap-4 p-3 pt-2 md:p-4">
                 {/* Tables: token number + only the selected item */}
-                <Column kind="table" title={t('kdsTables', lang)} count={split.table.length} entry={tableAgg} options={options} now={now} timer={timer} lang={lang} empty={split.table.length === 0}>
+                <Column kind="table" entry={tableAgg} options={options} now={now} timer={timer} lang={lang} empty={split.table.length === 0}>
                     {split.table.map(g => (
                         <KdsTokenCard
                             key={g.token.id}
@@ -86,13 +82,15 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
                             now={now}
                             timer={timer}
                             lang={lang}
-                            lines={g.lines.map(l => ({ item: l.item, pending: true }))}
+                            showTime={false}
+                            lines={g.lines.map(l => ({ item: l.item, pending: true, idx: l.idx }))}
+                            onServe={onServe ? (idx) => onServe(g.token.id, idx) : undefined}
                         />
                     ))}
                 </Column>
 
                 {/* Parcel: the whole token's pending items, selected item in bold */}
-                <Column kind="parcel" title={t('kdsParcel', lang)} count={split.parcel.length} entry={parcelAgg} options={options} now={now} timer={timer} lang={lang} empty={split.parcel.length === 0}>
+                <Column kind="parcel" entry={parcelAgg} options={options} now={now} timer={timer} lang={lang} empty={split.parcel.length === 0}>
                     {split.parcel.map(g => {
                         const all = lines.filter(l => l.token.id === g.token.id);
                         return (
@@ -103,7 +101,9 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
                                 now={now}
                                 timer={timer}
                                 lang={lang}
-                                lines={all.map(l => ({ item: l.item, pending: true }))}
+                                showTime={false}
+                                lines={all.map(l => ({ item: l.item, pending: true, idx: l.idx }))}
+                                onServe={onServe ? (idx) => onServe(g.token.id, idx) : undefined}
                                 isBold={(it) => `${it.name}||${it.category || ''}` === key}
                             />
                         );
