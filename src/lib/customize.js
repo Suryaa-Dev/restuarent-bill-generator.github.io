@@ -70,3 +70,33 @@ export function applyUnits(bill, line, units, modifiers) {
     });
     return out;
 }
+
+/* A customised dish is stored as several lines (one per set of modifiers) because the kitchen needs
+   them apart, but the bill must look as it always did: one row per dish, portion and section
+   (dine-in / parcel), with the total quantity. These helpers build that view and map a "+" / "-"
+   on the merged row back to the right stored line.                                              */
+
+// merged rows in order of first appearance; `idxs` = indexes of the stored lines behind a row
+export function mergeLines(bill) {
+    const rows = [];
+    (bill || []).forEach((l, i) => {
+        const row = rows.find(r => sameGroup(r, l));
+        if (row) { row.qty += l.qty; row.idxs.push(i); return; }
+        const { mods, ...rest } = l; // eslint-disable-line no-unused-vars
+        rows.push({ ...rest, idxs: [i] });
+    });
+    return rows;
+}
+
+// "+" on a merged row adds a plain portion: the plain line if there is one, otherwise -1 (a new line is needed)
+export const pickPlusIndex = (bill, row) => row.idxs.find(i => !(bill[i].mods && bill[i].mods.length)) ?? -1;
+
+// "-" removes one portion: prefer a portion that is not in a KOT yet (plain ones first),
+// otherwise the last line (the quantity guard then sends the waiter to Update Token)
+export function pickMinusIndex(bill, row, sentMap) {
+    const unsent = row.idxs.filter(i => bill[i].qty > Math.min(sentMap[lineKey(bill[i])] || 0, bill[i].qty));
+    const plain = unsent.find(i => !(bill[i].mods && bill[i].mods.length));
+    if (plain !== undefined) return plain;
+    if (unsent.length) return unsent[unsent.length - 1];
+    return row.idxs[row.idxs.length - 1];
+}

@@ -271,8 +271,21 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
             {/* navbar: kitchen name · [All][Table][Parcel] · settings */}
             <header className="shrink-0 z-40 bg-white border-b border-gray-200 px-3 md:px-4 py-2 flex items-center gap-3">
                 <div className="w-1/4 min-w-0 flex items-center gap-2">
-                    <span className="w-9 h-9 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><ChefHat size={20} /></span>
-                    <span className="text-base font-bold text-gray-900 truncate">{kitchen?.name || t('kdsTitle', lang)}</span>
+                    {selected ? (
+                        /* item page: Back takes the place of the kitchen name */
+                        <button
+                            onClick={() => goTab('all')}
+                            aria-label={t('kdsBackToAll', lang)}
+                            className="flex items-center gap-1.5 pl-2.5 pr-4 h-10 rounded-full border border-gray-300 bg-white text-sm font-semibold text-gray-800 shadow-sm active:bg-gray-100"
+                        >
+                            <ArrowLeft size={18} /> {t('kdsBackToAll', lang)}
+                        </button>
+                    ) : (
+                        <>
+                            <span className="w-9 h-9 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0"><ChefHat size={20} /></span>
+                            <span className="text-base font-bold text-gray-900 truncate">{kitchen?.name || t('kdsTitle', lang)}</span>
+                        </>
+                    )}
                     {/* connection dot: green = live, amber = reconnecting (tap to refresh orders now) */}
                     <button
                         onClick={() => onRefresh?.()}

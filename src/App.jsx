@@ -47,7 +47,7 @@ import ServiceTimeModal from './components/kitchen/ServiceTimeModal';
 import ModifierManager from './components/settings/ModifierManager';
 import CustomizeModal from './components/billing/CustomizeModal';
 import { fetchModifiers } from './lib/modifiers';
-import { buildUnits, applyUnits, groupIndexes } from './lib/customize';
+import { buildUnits, applyUnits, groupIndexes, mergeLines, pickPlusIndex, pickMinusIndex } from './lib/customize';
 import { useLongPress } from './lib/useLongPress';
 import { stampCartTimes, buildTimelineRows, saveTimelineRows, newUuid } from './lib/timeline';
 import { applyQuantityChange } from './lib/billOps';
@@ -216,8 +216,20 @@ const SentNotice = ({ lang }) => (
     </div>
 );
 
-const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, kitchen, onCustomizeLine, lang }) => {
+const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, kitchen, onCustomizeLine, onAddUnit, lang }) => {
     const press = useLongPress(); // long-press an item -> customise it
+    // One row per dish as always (customised portions are merged in); +/- map back to the stored lines
+    const rows = mergeLines(currentBill);
+    const sentNow = () => computeSentQty((kitchen?.tokens || []).filter(tk => tk.status === 'active'));
+    const plusRow = (row) => {
+        const i = pickPlusIndex(currentBill, row);
+        if (i >= 0) onChangeQuantity(i, currentBill[i].qty + 1);
+        else onAddUnit?.(row.idxs[0]);
+    };
+    const minusRow = (row) => {
+        const i = pickMinusIndex(currentBill, row, sentNow());
+        return minus(i, currentBill[i].qty - 1);
+    };
     const [view, setView] = useState('bill'); // 'bill' | 'tokens'
     const [notice, setNotice] = useState(false);
     const [showTimes, setShowTimes] = useState(false); // service-time proof (Kitchen mode)
@@ -308,9 +320,6 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4">
-                    {onCustomizeLine && !showTokens && currentBill.length > 0 && (
-                        <p className="-mt-1 mb-2 text-[11px] text-gray-400">{ts('longPressHint', lang)}</p>
-                    )}
                     {showTokens && notice && <SentNotice lang={lang} />}
                     {showTokens ? (
                         <TokensPanel
@@ -328,12 +337,12 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                             <p>{t('noItemsAdded', lang)}</p>
                         </div>
                     ) : (
-                        renderBillRows(currentBill, kitchen, lang, (item, idx, num) => {
+                        renderBillRows(rows, kitchen, lang, (item, idx, num) => {
                             return (
                                 <div key={idx} className="flex justify-between items-center py-3 border-b">
                                     <div
                                         className={onCustomizeLine ? 'flex-1 min-w-0 select-none [-webkit-touch-callout:none]' : undefined}
-                                        {...(onCustomizeLine ? press(() => onCustomizeLine(idx)) : {})}
+                                        {...(onCustomizeLine ? press(() => onCustomizeLine(item.idxs[0])) : {})}
                                     >
                                         <p className="font-medium">
                                             <span className="text-gray-400 font-normal mr-1">{num}.</span>
@@ -344,14 +353,11 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                                             <span className="mx-1">·</span>
                                             <span className="text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
                                         </p>
-                                        {item.mods?.length > 0 && (
-                                            <p className="text-xs font-bold text-indigo-600 mt-0.5">{item.mods.join(' · ')}</p>
-                                        )}
                                     </div>
 
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => minus(idx, item.qty - 1)}
+                                            onClick={() => minusRow(item)}
                                             className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center active:bg-gray-200"
                                         >
                                             <Minus size={16} />
@@ -362,7 +368,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                                         </span>
 
                                         <button
-                                            onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                                            onClick={() => plusRow(item)}
                                             className="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center active:bg-orange-600"
                                         >
                                             <Plus size={16} />
@@ -641,8 +647,15 @@ const DesktopTableGrid = ({ tables, bills, parcels, selectedTable, onSelectTable
 
 
 // fixed bill section on desktop
-const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, kitchen, onCustomizeLine, lang }) => {
+const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, kitchen, onCustomizeLine, onAddUnit, lang }) => {
     const press = useLongPress();
+    const rows = mergeLines(currentBill);
+    const sentNow = () => computeSentQty((kitchen?.tokens || []).filter(tk => tk.status === 'active'));
+    const plusRow = (row) => {
+        const i = pickPlusIndex(currentBill, row);
+        if (i >= 0) onChangeQuantity(i, currentBill[i].qty + 1);
+        else onAddUnit?.(row.idxs[0]);
+    };
     const [view, setView] = useState('bill'); // 'bill' | 'tokens' (Kitchen System mode only)
     const [notice, setNotice] = useState(false);
     const showTokens = !!kitchen && view === 'tokens';
@@ -673,25 +686,23 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                         onUpdate={kitchen.onUpdate}
                         onEditServed={kitchen.onEditServed}
                     />
-                ) : renderBillRows(currentBill, kitchen, lang, (item, idx, num) => {
+                ) : renderBillRows(rows, kitchen, lang, (item, idx, num) => {
                     return (
                         <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
                             <span
                                 className={`flex-1 text-gray-800 ${onCustomizeLine ? 'select-none' : ''}`}
-                                title={onCustomizeLine ? ts('longPressHint', lang) : undefined}
-                                {...(onCustomizeLine ? press(() => onCustomizeLine(idx)) : {})}
+                                {...(onCustomizeLine ? press(() => onCustomizeLine(item.idxs[0])) : {})}
                             >
                                 <span className="text-gray-400 mr-1">{num}.</span>
                                 {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
                                 <span className="block text-xs text-orange-600 font-medium">
                                     ₹{item.price} {t('each', lang)}
                                 </span>
-                                {item.mods?.length > 0 && <span className="block text-xs font-bold text-indigo-600">{item.mods.join(' · ')}</span>}
                             </span>
 
                             <div className="flex items-center gap-3">
                                 <button
-                                    onClick={() => minus(idx, item.qty - 1)}
+                                    onClick={() => { const i = pickMinusIndex(currentBill, item, sentNow()); minus(i, currentBill[i].qty - 1); }}
                                     className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"
                                 >
                                     <Minus size={14} />
@@ -702,7 +713,7 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                                 </span>
 
                                 <button
-                                    onClick={() => onChangeQuantity(idx, item.qty + 1)}
+                                    onClick={() => plusRow(item)}
                                     className="w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center hover:bg-orange-600"
                                 >
                                     <Plus size={14} />
@@ -1717,6 +1728,30 @@ export default function RestaurantBillGenerator() {
         await enqueueSave(c.table, next);
     };
 
+    // "+" on a row whose portions are ALL customised: add one plain portion (same section as the row)
+    const addPlainUnit = async (index) => {
+        const table = viewingTableFromAllTables || selectedTable;
+        const old = (table && billsRef.current[table]) || [];
+        const line = old[index];
+        if (!line) return;
+        const toParcel = kitchenMode && !!parcelsRef.current[table] && !line.isParcel; // Parcel button ON sends new portions to parcel
+        const plain = { name: line.name, portion: line.portion, price: line.price, qty: 1, category: line.category, ...((line.isParcel || toParcel) ? { isParcel: true } : {}) };
+        const samePlain = old.findIndex(l => !(l.mods && l.mods.length) && l.name === plain.name && l.portion === plain.portion
+            && (l.category || '') === (plain.category || '') && !!l.isParcel === !!plain.isParcel);
+        let merged;
+        if (samePlain >= 0) merged = old.map((l, i) => (i === samePlain ? { ...l, qty: l.qty + 1 } : l));
+        else {
+            const idxs = groupIndexes(old, line);
+            const at = toParcel ? old.length : idxs[idxs.length - 1] + 1;
+            merged = [...old.slice(0, at), plain, ...old.slice(at)];
+        }
+        const next = stampCartTimes(old, merged, tokensRef.current.filter(tk => tk.tableNumber === table));
+        const newBills = { ...billsRef.current, [table]: next };
+        billsRef.current = newBills;
+        setBills(newBills);
+        await enqueueSave(table, next);
+    };
+
     // marks / unmarks the open order as a parcel (saved with the bill, so every device sees it)
     const toggleParcel = async (table) => {
         if (!table) return;
@@ -1840,7 +1875,7 @@ export default function RestaurantBillGenerator() {
         const tableToUpdate = viewingTableFromAllTables || selectedTable;
         if (!tableToUpdate) return;
 
-        const items = bills[tableToUpdate] || [];
+        const items = mergeLines(bills[tableToUpdate] || []); // customised portions are printed as one row per dish
         if (items.length === 0) return;
 
         const now = new Date();
@@ -2519,6 +2554,7 @@ export default function RestaurantBillGenerator() {
                             onToggleParcel={() => toggleParcel(selectedTable)}
                             kitchen={desktopKitchen}
                             onCustomizeLine={kitchenMode && modifiers.length > 0 ? ((i) => setCustomizeIndex(i)) : undefined}
+                            onAddUnit={addPlainUnit}
                             lang={lang}
                         />
                     </>
@@ -2581,6 +2617,7 @@ export default function RestaurantBillGenerator() {
                     onToggleParcel={() => toggleParcel(viewingTableFromAllTables || selectedTable)}
                     kitchen={drawerKitchen}
                     onCustomizeLine={kitchenMode && modifiers.length > 0 ? ((i) => { setCustomizeIndex(i); }) : undefined}
+                    onAddUnit={addPlainUnit}
                     lang={lang}
                 />
             )}

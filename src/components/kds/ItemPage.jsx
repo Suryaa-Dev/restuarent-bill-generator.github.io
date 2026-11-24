@@ -17,21 +17,19 @@ const THEME = {
 
 // Customization Summary: per modifier, the outstanding portions that carry it (Half and Full kept apart).
 // A portion with two modifiers counts under both, so these are not item quantities.
+// One single row (scrolls sideways if there are many): "Spicy 1 Half · Extra Gravy 1 Half | 1 Full"
 function CustomSummary({ rows, options, lang }) {
     if (!rows || rows.length === 0) return null;
     return (
-        <div className="shrink-0 mt-2 max-h-36 overflow-y-auto rounded-xl border border-indigo-100 bg-white/80 px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 mb-1">{ts('customizationSummary', lang)}</p>
-            <ul className="space-y-0.5">
-                {rows.map(r => (
-                    <li key={r.mod} className="flex items-baseline justify-between gap-2 text-[13px] leading-snug">
-                        <span className="font-bold text-gray-900 truncate">{r.mod}</span>
-                        <span className="shrink-0 font-semibold tabular-nums text-gray-700">
-                            {portionList(r.portions, options, false).map(([p, q]) => `${q} ${translatePortion(p, lang)}`).join(' | ')}
-                        </span>
-                    </li>
-                ))}
-            </ul>
+        <div className="shrink-0 mt-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {rows.map(r => (
+                <span key={r.mod} className="shrink-0 inline-flex items-baseline gap-1.5 rounded-full border border-indigo-100 bg-white px-3 py-1 text-[13px] leading-snug">
+                    <span className="font-bold text-gray-900">{r.mod}</span>
+                    <span className="font-semibold tabular-nums text-indigo-700">
+                        {portionList(r.portions, options, false).map(([p, q]) => `${q} ${translatePortion(p, lang)}`).join(' | ')}
+                    </span>
+                </span>
+            ))}
         </div>
     );
 }
@@ -41,13 +39,12 @@ function Column({ kind, entry, options, now, timer, lang, children, empty, summa
     const color = entry ? ageColor(entry.oldest, now, timer) : 'none';
     return (
         <div className={`flex flex-col min-w-0 min-h-0 rounded-2xl border p-2.5 ${th.panel}`}>
-            {/* one compact row: icon (tables = blue, parcel = purple) · totals · oldest wait. It never scrolls. */}
+            {/* one compact row: icon (tables = blue, parcel = purple) · totals. The wait time is on each token. */}
             <div className="shrink-0 flex items-center gap-2">
                 <span className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${th.chip}`}><th.Icon size={17} /></span>
                 <div className={`flex-1 min-w-0 rounded-xl border-2 bg-white shadow-sm px-2.5 py-1 ${BORDER[color]}`}>
                     <PortionBlocks portions={entry?.portions} options={options} showZero lang={lang} size="md" />
                 </div>
-                {entry && <AgeText oldest={entry.oldest} now={now} colorKey={color} lang={lang} className="text-sm shrink-0" />}
             </div>
 
             <CustomSummary rows={summary} options={options} lang={lang} />
@@ -85,19 +82,8 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
 
     return (
         <div className="h-full flex flex-col">
-            {/* back to the main KDS screen + selected item name */}
-            <div className="relative flex items-center justify-center px-3 md:px-4 pt-2 pb-0 shrink-0">
-                <button
-                    onClick={onBack}
-                    className="absolute left-3 md:left-4 flex items-center gap-1.5 pl-2.5 pr-4 h-10 rounded-full border border-gray-300 bg-white text-sm font-semibold text-gray-800 shadow-sm active:bg-gray-100"
-                    aria-label={t('kdsBackToAll', lang)}
-                >
-                    <ArrowLeft size={18} /> {t('kdsBackToAll', lang)}
-                </button>
-                <h2 className="text-2xl font-bold text-gray-900 truncate px-28">{translateItemName(name, lang)}</h2>
-            </div>
-
-            <div className="flex-1 min-h-0 grid grid-cols-2 gap-3 md:gap-4 p-3 pt-2 md:p-4">
+            {/* the Back button lives in the top bar (KitchenDisplay), so the page starts right at the columns */}
+            <div className="flex-1 min-h-0 grid grid-cols-2 gap-3 md:gap-4 p-3 md:p-4">
                 {/* Tables: token number + only the selected item */}
                 <Column kind="table" entry={tableAgg} options={options} now={now} timer={timer} lang={lang} summary={tableSummary} empty={split.table.length === 0}>
                     {split.table.map(g => (

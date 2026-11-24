@@ -7,6 +7,7 @@ import { translateItemName, translatePortion } from '../i18n/translations';
 import { fetchAllRows } from '../lib/fetchAll';
 import { ts } from '../i18n/serveExtra';
 import ServiceTimeModal from '../components/kitchen/ServiceTimeModal';
+import { mergeLines } from '../lib/customize';
 import { resolveRange, formatISTDateLabel, formatISTTime } from '../lib/time';
 
 const PAGE_SIZE = 100; // rows rendered at a time (everything is still fetched, just shown in chunks)
@@ -448,7 +449,7 @@ export default function OrderHistory() {
 
                         <div className="flex-1 overflow-y-auto p-4">
                             {(() => {
-                                const all = selectedBill.items || [];
+                                const all = mergeLines(selectedBill.items || []);
                                 const kind = billKind(selectedBill);
                                 const isP = (i) => (kind === 'parcel' ? true : kind === 'mixed' ? !!i.isParcel : false);
                                 const sections = kind === 'mixed'
@@ -475,7 +476,6 @@ export default function OrderHistory() {
                                                     <p className="text-xs text-gray-500">
                                                         {translatePortion(item.portion, lang)} · ₹{item.price} each · x{item.qty}
                                                     </p>
-                                                    {item.mods?.length > 0 && <p className="text-xs font-bold text-indigo-600">{item.mods.join(' · ')}</p>}
                                                 </div>
                                                 <p className="font-semibold text-gray-800">₹{item.price * item.qty}</p>
                                             </div>
