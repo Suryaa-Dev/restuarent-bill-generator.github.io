@@ -475,6 +475,7 @@ export default function OrderHistory() {
                                                     <p className="text-xs text-gray-500">
                                                         {translatePortion(item.portion, lang)} · ₹{item.price} each · x{item.qty}
                                                     </p>
+                                                    {item.mods?.length > 0 && <p className="text-xs font-bold text-indigo-600">{item.mods.join(' · ')}</p>}
                                                 </div>
                                                 <p className="font-semibold text-gray-800">₹{item.price * item.qty}</p>
                                             </div>

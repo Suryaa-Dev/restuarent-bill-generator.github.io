@@ -166,7 +166,7 @@ export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang
         const sampleOf = (k) => items.find(it => lineKey(it) === k) || token.items.find(it => lineKey(it) === k);
         const mk = (k, delta, isParcel) => {
             const sample = sampleOf(k);
-            return { name: sample.name, portion: sample.portion, category: sample.category, price: sample.price, isParcel, delta };
+            return { name: sample.name, portion: sample.portion, category: sample.category, price: sample.price, isParcel, mods: sample.mods, delta };
         };
         const wasParcel = !!token.isParcel;
         let deltas;
@@ -244,6 +244,7 @@ export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang
                                         <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
                                         {translateItemName(r.name, lang)}
                                     </p>
+                                    {r.mods?.length > 0 && <p className="text-xs font-bold text-indigo-600">{r.mods.join(' · ')}</p>}
                                     <p className="text-sm text-gray-500">
                                         {translatePortion(r.portion, lang)}
                                         {r.isNew && (

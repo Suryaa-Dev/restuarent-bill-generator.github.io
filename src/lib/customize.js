@@ -1,0 +1,72 @@
+import { lineKey } from './kitchen';
+import { modsSig, sortModNames } from './modifiers';
+
+/* Customising the portions of one cart item (see components/billing/CustomizeModal.jsx).
+
+   A bill line is "dish + portion + same modifiers" with a quantity, e.g. 2 x Half Manchurian
+   [Spicy]. Customising 3 Half Manchurian as 1 Spicy / 1 Not Spicy / 1 plain therefore turns the
+   single line into three lines of quantity 1. Quantity already sent to the kitchen is locked:
+   a KOT can't be changed by the cart, only by Update Token.                                */
+
+// lines of the same dish, portion and section (dine-in / parcel) — whatever their modifiers
+export const sameGroup = (a, b) =>
+    a.name === b.name && a.portion === b.portion && (a.category || '') === (b.category || '') && !!a.isParcel === !!b.isParcel;
+
+export const groupIndexes = (bill, line) => bill.map((l, i) => (sameGroup(l, line) ? i : -1)).filter(i => i >= 0);
+
+// sentMap = computeSentQty(tokens of the table)
+export function buildUnits(groupLines, sentMap) {
+    const used = { ...sentMap };
+    const locked = [];
+    const editable = [];
+    let id = 0;
+    groupLines.forEach(l => {
+        const k = lineKey(l);
+        const sent = Math.min(used[k] || 0, l.qty);
+        used[k] = (used[k] || 0) - sent;
+        for (let i = 0; i < sent; i++) locked.push({ mods: l.mods || [] });
+        for (let i = 0; i < l.qty - sent; i++) editable.push({ id: id++, mods: [...(l.mods || [])] });
+    });
+    return { locked, editable };
+}
+
+// Puts the customised units back into the bill: units with the same modifiers become one line.
+export function applyUnits(bill, line, units, modifiers) {
+    const idxs = groupIndexes(bill, line);
+    if (idxs.length === 0) return bill;
+    const group = idxs.map(i => bill[i]);
+    const first = idxs[0];
+
+    const earliest = (field) => {
+        const v = group.map(l => l[field]).filter(Boolean).sort()[0];
+        return v ? { [field]: v } : {};
+    };
+
+    const buckets = new Map();
+    units.forEach(u => {
+        const sig = modsSig(u.mods);
+        if (!buckets.has(sig)) buckets.set(sig, { mods: sortModNames(u.mods, modifiers), qty: 0 });
+        buckets.get(sig).qty += 1;
+    });
+    // plain first, then the customised ones in the order they were met
+    const ordered = [...buckets.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : 0)).map(([, v]) => v);
+
+    const made = ordered.map(b => ({
+        name: line.name,
+        portion: line.portion,
+        price: line.price,
+        qty: b.qty,
+        category: line.category,
+        ...(line.isParcel ? { isParcel: true } : {}),
+        ...(b.mods.length ? { mods: b.mods } : {}),
+        ...earliest('addedAt'),
+        ...earliest('pendingSince'),
+    }));
+
+    const out = [];
+    bill.forEach((l, i) => {
+        if (i === first) out.push(...made);
+        if (!idxs.includes(i)) out.push(l);
+    });
+    return out;
+}

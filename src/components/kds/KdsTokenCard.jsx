@@ -47,12 +47,18 @@ export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold,
                 {lines.map(({ item: it, pending, idx }, i) => {
                     const bold = isBold ? isBold(it) : false;
                     const note = pending ? changeNote(it, lang) : null;
+                    const custom = pending && it.mods && it.mods.length > 0; // customised portion: animated border row
                     return (
-                        <div key={i} className={`px-3.5 py-2 ${bold ? 'bg-gray-50' : ''} ${pending ? '' : 'opacity-40'}`}>
+                        <div key={i} className={`px-3.5 py-2 ${bold ? 'bg-gray-50' : ''} ${pending ? '' : 'opacity-40'} ${custom ? `kds-custom mx-2 my-1.5 rounded-xl border-2 ${BORDER[color]}` : ''}`}>
                             <div className="flex items-center gap-3">
-                                <span className={`flex-1 min-w-0 text-[15px] leading-snug ${bold ? 'font-extrabold' : 'font-semibold'} text-gray-900 ${pending ? '' : 'line-through'}`}>
-                                    {translateItemName(it.name, lang)}
-                                </span>
+                                <div className="flex-1 min-w-0">
+                                    <span className={`block text-[15px] leading-snug ${bold ? 'font-extrabold' : 'font-semibold'} text-gray-900 ${pending ? '' : 'line-through'}`}>
+                                        {translateItemName(it.name, lang)}
+                                    </span>
+                                    {it.mods && it.mods.length > 0 && (
+                                        <span className={`block text-[13px] font-bold leading-snug text-indigo-700 ${pending ? '' : 'line-through'}`}>{it.mods.join(' · ')}</span>
+                                    )}
+                                </div>
                                 <span className="w-9 text-center shrink-0 text-xl font-extrabold tabular-nums text-gray-900">{it.qty}</span>
                                 <span className={`w-14 shrink-0 text-sm ${bold ? 'font-bold text-gray-800' : 'font-medium text-gray-500'}`}>{translatePortion(it.portion, lang)}</span>
                                 {onServe && pending && idx != null ? (

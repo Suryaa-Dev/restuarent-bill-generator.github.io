@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight, HandPlatter, Lock, Info } from 'lucide-react';
+import { Star, X, ShoppingCart, Printer, Trash2, Plus, Minus, Home, Grid3x3, Settings, Globe, Store, UtensilsCrossed, History, ArrowRightLeft, ListPlus, ShoppingBag, Send, ClipboardList, ChefHat, MonitorPlay, ArrowLeft, ChevronRight, HandPlatter, Lock, Info, SlidersHorizontal } from 'lucide-react';
 import { supabase } from './config/supabase';
 import { t, translateCategory, translateItemName, translatePortion, LANGUAGES } from './i18n/translations';
 import {
@@ -44,6 +44,11 @@ import ServeManagementTab from './components/serve/ServeManagementTab';
 import { ts } from './i18n/serveExtra';
 import { useTableLocks } from './lib/useTableLocks';
 import ServiceTimeModal from './components/kitchen/ServiceTimeModal';
+import ModifierManager from './components/settings/ModifierManager';
+import CustomizeModal from './components/billing/CustomizeModal';
+import { fetchModifiers } from './lib/modifiers';
+import { buildUnits, applyUnits, groupIndexes } from './lib/customize';
+import { useLongPress } from './lib/useLongPress';
 import { stampCartTimes, buildTimelineRows, saveTimelineRows, newUuid } from './lib/timeline';
 import { applyQuantityChange } from './lib/billOps';
 import { createKeyedQueue, createEchoFilter, nextStamp, tokenEcho } from './lib/billSync';
@@ -211,7 +216,8 @@ const SentNotice = ({ lang }) => (
     </div>
 );
 
-const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, kitchen, lang }) => {
+const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, onClose, onQuickAdd, onShiftTable, isParcel, onToggleParcel, kitchen, onCustomizeLine, lang }) => {
+    const press = useLongPress(); // long-press an item -> customise it
     const [view, setView] = useState('bill'); // 'bill' | 'tokens'
     const [notice, setNotice] = useState(false);
     const [showTimes, setShowTimes] = useState(false); // service-time proof (Kitchen mode)
@@ -302,6 +308,9 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4">
+                    {onCustomizeLine && !showTokens && currentBill.length > 0 && (
+                        <p className="-mt-1 mb-2 text-[11px] text-gray-400">{ts('longPressHint', lang)}</p>
+                    )}
                     {showTokens && notice && <SentNotice lang={lang} />}
                     {showTokens ? (
                         <TokensPanel
@@ -322,7 +331,10 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                         renderBillRows(currentBill, kitchen, lang, (item, idx, num) => {
                             return (
                                 <div key={idx} className="flex justify-between items-center py-3 border-b">
-                                    <div>
+                                    <div
+                                        className={onCustomizeLine ? 'flex-1 min-w-0 select-none [-webkit-touch-callout:none]' : undefined}
+                                        {...(onCustomizeLine ? press(() => onCustomizeLine(idx)) : {})}
+                                    >
                                         <p className="font-medium">
                                             <span className="text-gray-400 font-normal mr-1">{num}.</span>
                                             {translateItemName(item.name, lang)}
@@ -332,6 +344,9 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                                             <span className="mx-1">·</span>
                                             <span className="text-orange-600 font-medium">₹{item.price} {t('each', lang)}</span>
                                         </p>
+                                        {item.mods?.length > 0 && (
+                                            <p className="text-xs font-bold text-indigo-600 mt-0.5">{item.mods.join(' · ')}</p>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center gap-3">
@@ -626,7 +641,8 @@ const DesktopTableGrid = ({ tables, bills, parcels, selectedTable, onSelectTable
 
 
 // fixed bill section on desktop
-const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, kitchen, lang }) => {
+const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPrintBill, onClearBill, isParcel, onToggleParcel, kitchen, onCustomizeLine, lang }) => {
+    const press = useLongPress();
     const [view, setView] = useState('bill'); // 'bill' | 'tokens' (Kitchen System mode only)
     const [notice, setNotice] = useState(false);
     const showTokens = !!kitchen && view === 'tokens';
@@ -660,12 +676,17 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
                 ) : renderBillRows(currentBill, kitchen, lang, (item, idx, num) => {
                     return (
                         <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-300">
-                            <span className="flex-1 text-gray-800">
+                            <span
+                                className={`flex-1 text-gray-800 ${onCustomizeLine ? 'select-none' : ''}`}
+                                title={onCustomizeLine ? ts('longPressHint', lang) : undefined}
+                                {...(onCustomizeLine ? press(() => onCustomizeLine(idx)) : {})}
+                            >
                                 <span className="text-gray-400 mr-1">{num}.</span>
                                 {translateItemName(item.name, lang)} ({translatePortion(item.portion, lang)})
                                 <span className="block text-xs text-orange-600 font-medium">
                                     ₹{item.price} {t('each', lang)}
                                 </span>
+                                {item.mods?.length > 0 && <span className="block text-xs font-bold text-indigo-600">{item.mods.join(' · ')}</span>}
                             </span>
 
                             <div className="flex items-center gap-3">
@@ -841,7 +862,7 @@ const SettingsSegment = ({ options, value, onChange }) => (
     </div>
 );
 
-const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenFavorites, onOpenHistory, onChangeBranch, onClose }) => {
+const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenModifiers, onOpenFavorites, onOpenHistory, onChangeBranch, onClose }) => {
     // The phone's Back button closes the page (instead of leaving the app). Actions that
     // leave the page (open Menu, History, KDS...) go "back" first so history stays clean.
     const pendingRef = useRef(null);
@@ -932,6 +953,9 @@ const SettingsPage = ({ lang, onChangeLang, branch, appMode, onChangeMode, onOpe
                 {/* Menu & orders */}
                 <SettingsSection title={t('secManage', lang)}>
                     <SettingsRow icon={UtensilsCrossed} tint="bg-orange-50 text-orange-600" title={t('updateMenu', lang)} desc={t('updateMenuDesc', lang)} onClick={() => leave(onOpenMenuManager)} />
+                    {appMode === 'kitchen' && (
+                        <SettingsRow icon={SlidersHorizontal} tint="bg-indigo-50 text-indigo-600" title={ts('modifiers', lang)} desc={ts('modifiersDesc', lang)} onClick={() => leave(onOpenModifiers)} />
+                    )}
                     <SettingsRow icon={Star} tint="bg-yellow-50 text-yellow-600" title={tf('favTitle', lang)} desc={tf('favDesc', lang)} onClick={() => leave(onOpenFavorites)} />
                     <SettingsRow icon={History} tint="bg-gray-100 text-gray-700" title={t('orderHistory', lang)} desc={t('orderHistoryDesc', lang)} onClick={() => leave(onOpenHistory)} />
                 </SettingsSection>
@@ -1206,6 +1230,20 @@ export default function RestaurantBillGenerator() {
         setMenuItems(items);
         setMenuWarning(!!error && fromCache);
     };
+
+    // Modifiers (preparation instructions). If the table doesn't exist yet the list is simply empty.
+    const [modifiers, setModifiers] = useState([]);
+    const [showModifierManager, setShowModifierManager] = useState(false);
+    const [customizeIndex, setCustomizeIndex] = useState(null); // bill line being customised
+    const loadModifiers = async () => {
+        try { setModifiers(await fetchModifiers()); } catch (err) { console.warn('Modifiers not available (run modifiers.sql?):', err?.message); }
+    };
+    useEffect(() => {
+        loadModifiers();
+        const onVisible = () => { if (document.visibilityState === 'visible') loadModifiers(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, []);
 
     useEffect(() => {
         loadMenu();
@@ -1578,6 +1616,7 @@ export default function RestaurantBillGenerator() {
         const existingIndex = bill.findIndex(
             b => b.name === name && b.portion === portion && (!b.category || !category || b.category === category)
                 && (!kitchenMode || !!b.isParcel === parcelMode)
+                && !(b.mods && b.mods.length) // a plain tap adds to the plain line, never to a customised one
         );
 
         if (existingIndex >= 0) {
@@ -1650,6 +1689,33 @@ export default function RestaurantBillGenerator() {
         await enqueueSave(tableToUpdate, bill);
     };
 
+
+    // ---- Customisation (preparation instructions) of one cart item ----
+    // The table whose cart is open: from All Tables, or the one selected on Home.
+    const customizing = (() => {
+        if (customizeIndex === null) return null;
+        const table = viewingTableFromAllTables || selectedTable;
+        const bill = (table && billsRef.current[table]) || [];
+        const line = bill[customizeIndex];
+        if (!line) return null;
+        const group = groupIndexes(bill, line).map(i => bill[i]);
+        const sentMap = computeSentQty(tokensRef.current.filter(tk => tk.tableNumber === table && tk.status === 'active'));
+        const { locked, editable } = buildUnits(group, sentMap);
+        return { table, line, locked, editable };
+    })();
+
+    const saveCustomization = async (units) => {
+        const c = customizing;
+        setCustomizeIndex(null);
+        if (!c) return;
+        const old = billsRef.current[c.table] || [];
+        const merged = applyUnits(old, c.line, [...c.locked.map((u, i) => ({ id: `l${i}`, mods: u.mods })), ...units], modifiers);
+        const next = stampCartTimes(old, merged, tokensRef.current.filter(tk => tk.tableNumber === c.table));
+        const newBills = { ...billsRef.current, [c.table]: next };
+        billsRef.current = newBills;
+        setBills(newBills);
+        await enqueueSave(c.table, next);
+    };
 
     // marks / unmarks the open order as a parcel (saved with the bill, so every device sees it)
     const toggleParcel = async (table) => {
@@ -2044,7 +2110,7 @@ export default function RestaurantBillGenerator() {
                 if (q <= 0) bill.splice(idx, 1);
                 else bill[idx] = { ...bill[idx], qty: q };
             } else if (d.delta > 0) {
-                bill.push({ name: d.name, portion: d.portion, price: d.price, qty: d.delta, category: d.category, addedAt: new Date().toISOString(), ...(d.isParcel ? { isParcel: true } : {}) });
+                bill.push({ name: d.name, portion: d.portion, price: d.price, qty: d.delta, category: d.category, addedAt: new Date().toISOString(), ...(d.mods && d.mods.length ? { mods: d.mods } : {}), ...(d.isParcel ? { isParcel: true } : {}) });
             }
         });
 
@@ -2067,7 +2133,7 @@ export default function RestaurantBillGenerator() {
                 // served items were eaten — they stay on the bill; everything else goes
                 const deltas = tk.items
                     .filter(i => !i.removed && !i.served)
-                    .map(i => ({ name: i.name, portion: i.portion, category: i.category, price: i.price, isParcel: !!tk.isParcel, delta: -i.qty }));
+                    .map(i => ({ name: i.name, portion: i.portion, category: i.category, price: i.price, isParcel: !!tk.isParcel, mods: i.mods, delta: -i.qty }));
                 if (deltas.length) await applyBillDelta(tk.tableNumber, deltas);
             }
             setCancelTarget(null);
@@ -2098,7 +2164,7 @@ export default function RestaurantBillGenerator() {
             if (q === 0) items[idx] = { ...it, removed: true, change: 'removed' };
             else items[idx] = { ...it, qty: q, change: 'qty', prevQty: it.change === 'qty' && it.prevQty != null ? it.prevQty : it.qty };
 
-            deltas.push({ name: it.name, portion: it.portion, category: it.category, price: it.price, isParcel: !!tk.isParcel, delta: -diff });
+            deltas.push({ name: it.name, portion: it.portion, category: it.category, price: it.price, isParcel: !!tk.isParcel, mods: it.mods, delta: -diff });
         });
         if (!deltas.length) return;
 
@@ -2452,6 +2518,7 @@ export default function RestaurantBillGenerator() {
                             isParcel={!!(selectedTable && parcels[selectedTable])}
                             onToggleParcel={() => toggleParcel(selectedTable)}
                             kitchen={desktopKitchen}
+                            onCustomizeLine={kitchenMode && modifiers.length > 0 ? ((i) => setCustomizeIndex(i)) : undefined}
                             lang={lang}
                         />
                     </>
@@ -2513,6 +2580,7 @@ export default function RestaurantBillGenerator() {
                     isParcel={!!parcels[viewingTableFromAllTables || selectedTable]}
                     onToggleParcel={() => toggleParcel(viewingTableFromAllTables || selectedTable)}
                     kitchen={drawerKitchen}
+                    onCustomizeLine={kitchenMode && modifiers.length > 0 ? ((i) => { setCustomizeIndex(i); }) : undefined}
                     lang={lang}
                 />
             )}
@@ -2538,10 +2606,34 @@ export default function RestaurantBillGenerator() {
                     onOpenKitchenSettings={() => { setShowSettings(false); setShowKitchenManager(true); }}
                     onOpenKds={() => { setShowSettings(false); navigate('/kds'); }}
                     onOpenMenuManager={() => { setShowSettings(false); setShowMenuManager(true); }}
+                    onOpenModifiers={() => { setShowSettings(false); setShowModifierManager(true); }}
                     onOpenFavorites={() => { setShowSettings(false); setShowFavManager(true); }}
                     onOpenHistory={() => { setShowSettings(false); navigate('/history'); }}
                     onChangeBranch={handleRequestChangeBranch}
                     onClose={() => setShowSettings(false)}
+                />
+            )}
+
+            {customizing && (
+                <CustomizeModal
+                    key={`${customizing.table}-${customizeIndex}`}
+                    line={customizing.line}
+                    locked={customizing.locked}
+                    initialUnits={customizing.editable}
+                    modifiers={modifiers}
+                    lang={lang}
+                    onSave={saveCustomization}
+                    onClose={() => setCustomizeIndex(null)}
+                />
+            )}
+
+            {showModifierManager && (
+                <ModifierManager
+                    lang={lang}
+                    modifiers={modifiers}
+                    categories={getCategories(menuItems)}
+                    onChanged={loadModifiers}
+                    onClose={() => setShowModifierManager(false)}
                 />
             )}
 

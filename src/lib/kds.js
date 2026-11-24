@@ -61,14 +61,30 @@ export function aggregate(lines) {
     lines.forEach(l => {
         let e = m.get(l.key);
         if (!e) {
-            e = { key: l.key, name: l.item.name, category: l.item.category, portions: {}, total: 0, oldest: Infinity };
+            e = { key: l.key, name: l.item.name, category: l.item.category, portions: {}, total: 0, custom: 0, oldest: Infinity };
             m.set(l.key, e);
         }
         e.portions[l.item.portion] = (e.portions[l.item.portion] || 0) + l.qty;
         e.total += l.qty;
+        if (l.item.mods && l.item.mods.length) e.custom += l.qty; // portions with preparation instructions
         if (l.enteredAt < e.oldest) e.oldest = l.enteredAt;
     });
     return m;
+}
+
+// Customization summary: for every modifier, how many pending portions carry it, per portion size.
+// One portion with two modifiers counts under both, so these totals are NOT item quantities.
+export function customSummary(lines) {
+    const m = new Map();
+    lines.forEach(l => {
+        (l.item.mods || []).forEach(mod => {
+            if (!m.has(mod)) m.set(mod, { mod, portions: {}, total: 0 });
+            const e = m.get(mod);
+            e.portions[l.item.portion] = (e.portions[l.item.portion] || 0) + l.qty;
+            e.total += l.qty;
+        });
+    });
+    return [...m.values()].sort((a, b) => b.total - a.total || a.mod.localeCompare(b.mod));
 }
 
 // [['Half', 6], ['Full', 2]] in the menu's portion order

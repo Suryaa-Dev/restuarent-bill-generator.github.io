@@ -156,6 +156,7 @@ function ServeManagementTabInner({ tokens, tables, kitchens, onServe, lang }) {
         <div className="flex items-center gap-2 px-3 py-2.5">
             <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm leading-snug text-gray-900">{translateItemName(l.item.name, lang)}</p>
+                {l.item.mods?.length > 0 && <p className="text-xs font-bold text-indigo-600">{l.item.mods.join(' · ')}</p>}
                 <p className="text-[11px] text-gray-500">
                     {showToken && <span>#{l.tokenNo} · </span>}
                     <span className={`font-semibold tabular-nums ${TEXT[l.color]}`}>{ageMinutes(l.enteredAt, now)} {t('kdsMin', lang)}</span>

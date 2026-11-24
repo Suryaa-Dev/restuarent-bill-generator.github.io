@@ -1,7 +1,9 @@
 /* Pure helpers for changing a bill (no React, easy to test). */
 
+const modsOf = (l) => (l.mods && l.mods.length ? [...l.mods].sort().join('+') : '');
 const sameDish = (a, b) =>
-    a.name === b.name && a.portion === b.portion && (!a.category || !b.category || a.category === b.category);
+    a.name === b.name && a.portion === b.portion && (!a.category || !b.category || a.category === b.category)
+    && modsOf(a) === modsOf(b); // a customised line only joins a line with the same modifiers
 
 /* + / - / typed quantity on one bill line.
 
@@ -20,7 +22,7 @@ export function applyQuantityChange(bill, index, value, { kitchenMode = false, p
         const extra = qty - line.qty;
         const pIdx = next.findIndex(b => b.isParcel && sameDish(b, line));
         if (pIdx >= 0) next[pIdx] = { ...next[pIdx], qty: next[pIdx].qty + extra };
-        else next.push({ name: line.name, portion: line.portion, price: line.price, qty: extra, category: line.category, isParcel: true });
+        else next.push({ name: line.name, portion: line.portion, price: line.price, qty: extra, category: line.category, isParcel: true, ...(line.mods && line.mods.length ? { mods: line.mods } : {}) });
         return next;
     }
 

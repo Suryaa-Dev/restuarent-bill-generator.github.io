@@ -26,7 +26,8 @@ export function hasUsedKitchenMode() {
 // In Kitchen mode a bill can hold the SAME dish twice — once as dine-in, once as parcel —
 // so the parcel flag is part of the identity. Bill lines carry it themselves (isParcel);
 // token lines get it from their token, passed in as the 2nd argument.
-export const lineKey = (i, parcel) => `${i.name}||${i.portion}||${i.category || ''}${(parcel ?? i.isParcel) ? '||P' : ''}`;
+// Modifiers are part of the identity too: 2 Half Manchurian [Spicy] and 1 plain Half Manchurian are different lines.
+export const lineKey = (i, parcel) => `${i.name}||${i.portion}||${i.category || ''}${(parcel ?? i.isParcel) ? '||P' : ''}${i.mods && i.mods.length ? `||M:${[...i.mods].sort().join('+')}` : ''}`;
 
 /* ---------------- Kitchens ---------------- */
 
@@ -282,6 +283,7 @@ export function analyzeBill(bill, tokens, kitchenOf) {
                 kitchenId,
                 served: false,
                 cartAt: line.pendingSince || line.addedAt || null, // when it was added to the cart (timing log)
+                ...(line.mods && line.mods.length ? { mods: line.mods } : {}), // preparation instructions travel with the KOT
                 isParcel: !!line.isParcel, // decides which token (dine-in / parcel) this goes on
             });
         }
@@ -296,7 +298,7 @@ export function analyzeBill(bill, tokens, kitchenOf) {
 export function convertUnsent(bill, tokens, toParcel) {
     const sent = computeSentQty(tokens);
     const out = bill.map(l => ({ ...l }));
-    const base = (l) => `${l.name}||${l.portion}||${l.category || ''}`;
+    const base = (l) => `${l.name}||${l.portion}||${l.category || ''}${l.mods && l.mods.length ? `||M:${[...l.mods].sort().join('+')}` : ''}`;
 
     const groups = new Map();
     out.forEach(l => {
@@ -315,7 +317,7 @@ export function convertUnsent(bill, tokens, toParcel) {
         if (to) {
             to.qty += move;
         } else {
-            const fresh = { name: from.name, portion: from.portion, price: from.price, qty: move, category: from.category };
+            const fresh = { name: from.name, portion: from.portion, price: from.price, qty: move, category: from.category, ...(from.mods && from.mods.length ? { mods: from.mods } : {}) };
             if (toParcel) fresh.isParcel = true;
             out.push(fresh);
             g[toParcel ? 'p' : 'd'] = fresh;

@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { ArrowLeft, Utensils, ShoppingBag } from 'lucide-react';
-import { ageColor, aggregate, BORDER } from '../../lib/kds';
-import { t, translateItemName } from '../../i18n/translations';
+import { ageColor, aggregate, customSummary, portionList, BORDER } from '../../lib/kds';
+import { t, translateItemName, translatePortion } from '../../i18n/translations';
+import { ts } from '../../i18n/serveExtra';
 import { AgeText, PortionBlocks } from './KdsBox';
 import KdsTokenCard from './KdsTokenCard';
 
@@ -14,7 +15,28 @@ const THEME = {
     parcel: { panel: 'bg-purple-50 border-purple-100', chip: 'bg-purple-100 text-purple-700', text: 'text-purple-700', Icon: ShoppingBag },
 };
 
-function Column({ kind, entry, options, now, timer, lang, children, empty }) {
+// Customization Summary: per modifier, the outstanding portions that carry it (Half and Full kept apart).
+// A portion with two modifiers counts under both, so these are not item quantities.
+function CustomSummary({ rows, options, lang }) {
+    if (!rows || rows.length === 0) return null;
+    return (
+        <div className="shrink-0 mt-2 max-h-36 overflow-y-auto rounded-xl border border-indigo-100 bg-white/80 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 mb-1">{ts('customizationSummary', lang)}</p>
+            <ul className="space-y-0.5">
+                {rows.map(r => (
+                    <li key={r.mod} className="flex items-baseline justify-between gap-2 text-[13px] leading-snug">
+                        <span className="font-bold text-gray-900 truncate">{r.mod}</span>
+                        <span className="shrink-0 font-semibold tabular-nums text-gray-700">
+                            {portionList(r.portions, options, false).map(([p, q]) => `${q} ${translatePortion(p, lang)}`).join(' | ')}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+function Column({ kind, entry, options, now, timer, lang, children, empty, summary }) {
     const th = THEME[kind];
     const color = entry ? ageColor(entry.oldest, now, timer) : 'none';
     return (
@@ -27,6 +49,8 @@ function Column({ kind, entry, options, now, timer, lang, children, empty }) {
                 </div>
                 {entry && <AgeText oldest={entry.oldest} now={now} colorKey={color} lang={lang} className="text-sm shrink-0" />}
             </div>
+
+            <CustomSummary rows={summary} options={options} lang={lang} />
 
             {/* only this list scrolls */}
             <div className="mt-2 flex-1 min-h-0 overflow-y-auto space-y-2.5 pb-1">
@@ -54,6 +78,8 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
         return { table: group(false), parcel: group(true) };
     }, [mine]);
 
+    const tableSummary = useMemo(() => customSummary(mine.filter(l => !l.token.isParcel)), [mine]);
+    const parcelSummary = useMemo(() => customSummary(mine.filter(l => l.token.isParcel)), [mine]);
     const tableAgg = aggregate(mine.filter(l => !l.token.isParcel)).get(key);
     const parcelAgg = aggregate(mine.filter(l => l.token.isParcel)).get(key);
 
@@ -73,7 +99,7 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
 
             <div className="flex-1 min-h-0 grid grid-cols-2 gap-3 md:gap-4 p-3 pt-2 md:p-4">
                 {/* Tables: token number + only the selected item */}
-                <Column kind="table" entry={tableAgg} options={options} now={now} timer={timer} lang={lang} empty={split.table.length === 0}>
+                <Column kind="table" entry={tableAgg} options={options} now={now} timer={timer} lang={lang} summary={tableSummary} empty={split.table.length === 0}>
                     {split.table.map(g => (
                         <KdsTokenCard
                             key={g.token.id}
@@ -90,7 +116,7 @@ export default function ItemPage({ itemKey: key, name, lines, menuByKey, now, ti
                 </Column>
 
                 {/* Parcel: the whole token's pending items, selected item in bold */}
-                <Column kind="parcel" entry={parcelAgg} options={options} now={now} timer={timer} lang={lang} empty={split.parcel.length === 0}>
+                <Column kind="parcel" entry={parcelAgg} options={options} now={now} timer={timer} lang={lang} summary={parcelSummary} empty={split.parcel.length === 0}>
                     {split.parcel.map(g => {
                         const all = lines.filter(l => l.token.id === g.token.id);
                         return (

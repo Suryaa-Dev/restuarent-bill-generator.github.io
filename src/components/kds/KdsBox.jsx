@@ -103,13 +103,14 @@ function Backdrop({ img }) {
 
 export default function KdsBox({ name, entry, options, colorKey, flag, small, showZero, onClick, lang, now, img }) {
     const border = BORDER[colorKey || 'none'];
+    const custom = (entry?.custom || 0) > 0; // some pending portion has preparation instructions -> animated border
 
     if (small) {
         return (
             <button
                 onClick={onClick}
                 disabled={!onClick}
-                className={`relative w-full bg-white text-left rounded-xl border-2 shadow-sm px-2.5 pt-3 pb-2 ${border} ${onClick ? 'active:bg-gray-50' : ''}`}
+                className={`relative w-full bg-white text-left rounded-xl border-2 shadow-sm px-2.5 pt-3 pb-2 ${border} ${custom ? 'kds-custom' : ''} ${onClick ? 'active:bg-gray-50' : ''}`}
             >
                 {entry && <AgeBadge oldest={entry.oldest} now={now} colorKey={colorKey} lang={lang} small />}
                 <FlagBadge flag={flag} small />
@@ -123,7 +124,7 @@ export default function KdsBox({ name, entry, options, colorKey, flag, small, sh
         <button
             onClick={onClick}
             disabled={!onClick}
-            className={`relative w-full bg-white text-left rounded-2xl border-2 shadow-sm h-[32vh] min-h-[124px] ${border} ${onClick ? 'active:bg-gray-50' : ''}`}
+            className={`relative w-full bg-white text-left rounded-2xl border-2 shadow-sm h-[32vh] min-h-[124px] ${border} ${custom ? 'kds-custom' : ''} ${onClick ? 'active:bg-gray-50' : ''}`}
         >
             <Backdrop img={img} />
             {entry && <AgeBadge oldest={entry.oldest} now={now} colorKey={colorKey} lang={lang} />}
