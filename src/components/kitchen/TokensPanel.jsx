@@ -89,6 +89,9 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                             <div className="flex items-center gap-2">
                                 <p className={`flex-1 min-w-0 font-semibold text-sm leading-snug ${dim ? 'line-through text-gray-400' : 'text-gray-900'}`}>
                                     {translateItemName(it.name, lang)}
+                                    {it.mods && it.mods.length > 0 && (
+                                        <span className={`block text-xs font-bold leading-snug ${dim ? 'text-gray-400 line-through' : 'text-indigo-600'}`}>{it.mods.join(', ')}</span>
+                                    )}
                                 </p>
                                 <span className={`w-8 shrink-0 text-center font-bold text-base ${dim ? 'text-gray-400' : 'text-gray-800'}`}>
                                     {it.qty}

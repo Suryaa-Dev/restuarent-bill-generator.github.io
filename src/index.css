@@ -54,19 +54,16 @@
   }
 }
 
-/* ---------- KDS: customised item = subtle moving white highlight along the border ----------
-   The border itself keeps its single urgency colour (green / yellow / orange / red); only a small,
-   softly blurred, translucent white highlight travels around it, like a loading ring.
-   No flashing, no pulsing, no colour mixing. Reduced motion: the highlight stands still. */
+/* ---------- KDS: the "customised item" badge ----------
+   A small, softly blurred, translucent white highlight travels around the badge's edge, like a loading
+   ring. No flashing, no pulsing, no colour mixing. Reduced motion: the highlight stands still.
+   (The element must be positioned; the badges are.) */
 @property --kds-angle {
     syntax: '<angle>';
     inherits: false;
     initial-value: 0deg;
 }
-.kds-custom {
-    position: relative;
-}
-.kds-custom::after {
+.kds-orbit::after {
     content: '';
     position: absolute;
     inset: -2px;                 /* sits exactly on the 2px border */
@@ -75,18 +72,18 @@
     pointer-events: none;
     z-index: 5;
     background: conic-gradient(from var(--kds-angle),
-        transparent 0deg, transparent 316deg,
-        rgba(255, 255, 255, .45) 334deg, rgba(255, 255, 255, .9) 346deg,
-        rgba(255, 255, 255, .45) 357deg, transparent 360deg);
+        transparent 0deg, transparent 296deg,
+        rgba(255, 255, 255, .5) 322deg, rgba(255, 255, 255, .95) 340deg,
+        rgba(255, 255, 255, .5) 356deg, transparent 360deg);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-    filter: blur(.6px);
-    animation: kds-orbit 3.4s linear infinite;
+    filter: blur(.5px);
+    animation: kds-orbit 2.8s linear infinite;
 }
 @keyframes kds-orbit {
     to { --kds-angle: 360deg; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .kds-custom::after { animation: none; }
+    .kds-orbit::after { animation: none; }
 }

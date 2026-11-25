@@ -1,4 +1,5 @@
 import React from 'react';
+import { CustomInlineBadge } from './CustomBadge';
 import { Check, ShoppingBag } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../i18n/translations';
 import { tx } from '../../i18n/kdsExtra';
@@ -24,6 +25,7 @@ const changeNote = (it, lang) => {
     mark it served on behalf of a waiter who forgot.                                          */
 export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold, onServe, lang, showTime = true }) {
     const color = ageColor(oldest, now, timer);
+    const hasCustom = lines.some(l => l.pending && l.item.mods && l.item.mods.length > 0);
     return (
         <div className={`rounded-2xl border-2 bg-white overflow-hidden shadow-sm ${BORDER[color]}`}>
             {/* who + how long */}
@@ -36,9 +38,13 @@ export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold,
                         </span>
                     )}
                 </div>
-                <div className="text-right leading-tight shrink-0">
-                    <AgeText oldest={oldest} now={now} colorKey={color} lang={lang} className="text-sm" />
-                    {showTime && <p className="text-[11px] text-gray-400">{fmtTime(token.createdAt)}</p>}
+                <div className="flex items-center gap-2 shrink-0">
+                    {/* badge keeps its place: the timer sits in a fixed-width slot, so nothing shifts if it is missing */}
+                    {hasCustom && <CustomInlineBadge lang={lang} />}
+                    <div className="text-right leading-tight min-w-[3.75rem]">
+                        <AgeText oldest={oldest} now={now} colorKey={color} lang={lang} className="text-sm" />
+                        {showTime && <p className="text-[11px] text-gray-400">{fmtTime(token.createdAt)}</p>}
+                    </div>
                 </div>
             </div>
 
@@ -47,16 +53,16 @@ export default function KdsTokenCard({ token, lines, oldest, now, timer, isBold,
                 {lines.map(({ item: it, pending, idx }, i) => {
                     const bold = isBold ? isBold(it) : false;
                     const note = pending ? changeNote(it, lang) : null;
-                    const custom = pending && it.mods && it.mods.length > 0; // customised portion: animated border row
+                    const custom = pending && it.mods && it.mods.length > 0; // customised portion: its own bordered row
                     return (
-                        <div key={i} className={`px-3.5 py-2 ${bold ? 'bg-gray-50' : ''} ${pending ? '' : 'opacity-40'} ${custom ? `kds-custom mx-2 my-1.5 rounded-xl border-2 ${BORDER[color]}` : ''}`}>
+                        <div key={i} className={`px-3.5 py-2 ${bold ? 'bg-gray-50' : ''} ${pending ? '' : 'opacity-40'} ${custom ? `mx-2 my-1.5 rounded-xl` : ''}`}>
                             <div className="flex items-center gap-3">
                                 <div className="flex-1 min-w-0">
                                     <span className={`block text-[15px] leading-snug ${bold ? 'font-extrabold' : 'font-semibold'} text-gray-900 ${pending ? '' : 'line-through'}`}>
                                         {translateItemName(it.name, lang)}
                                     </span>
                                     {it.mods && it.mods.length > 0 && (
-                                        <span className={`block text-[13px] font-bold leading-snug text-indigo-700 ${pending ? '' : 'line-through'}`}>{it.mods.join(' · ')}</span>
+                                        <span className={`block text-[13px] font-bold leading-snug text-indigo-700 ${pending ? '' : 'line-through'}`}>{it.mods.join(', ')}</span>
                                     )}
                                 </div>
                                 <span className="w-9 text-center shrink-0 text-xl font-extrabold tabular-nums text-gray-900">{it.qty}</span>

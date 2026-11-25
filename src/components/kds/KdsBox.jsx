@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CustomBoxBadge } from './CustomBadge';
 import { ArrowUp, ArrowDown, UtensilsCrossed } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../i18n/translations';
 import { BORDER, FILL, TEXT, ageMinutes, portionList } from '../../lib/kds';
@@ -103,16 +104,17 @@ function Backdrop({ img }) {
 
 export default function KdsBox({ name, entry, options, colorKey, flag, small, showZero, onClick, lang, now, img }) {
     const border = BORDER[colorKey || 'none'];
-    const custom = (entry?.custom || 0) > 0; // some pending portion has preparation instructions -> animated border
+    const custom = (entry?.custom || 0) > 0; // some pending portion has preparation instructions -> badge
 
     if (small) {
         return (
             <button
                 onClick={onClick}
                 disabled={!onClick}
-                className={`relative w-full bg-white text-left rounded-xl border-2 shadow-sm px-2.5 pt-3 pb-2 ${border} ${custom ? 'kds-custom' : ''} ${onClick ? 'active:bg-gray-50' : ''}`}
+                className={`relative w-full bg-white text-left rounded-xl border-2 shadow-sm px-2.5 pt-3 pb-2 ${border} ${onClick ? 'active:bg-gray-50' : ''}`}
             >
                 {entry && <AgeBadge oldest={entry.oldest} now={now} colorKey={colorKey} lang={lang} small />}
+                {custom && <CustomBoxBadge small lang={lang} />}
                 <FlagBadge flag={flag} small />
                 <span className="block text-[13px] font-semibold leading-snug text-gray-900 line-clamp-2 mb-1">{translateItemName(name, lang)}</span>
                 <PortionInline portions={entry?.portions} options={options} lang={lang} />
@@ -124,10 +126,11 @@ export default function KdsBox({ name, entry, options, colorKey, flag, small, sh
         <button
             onClick={onClick}
             disabled={!onClick}
-            className={`relative w-full bg-white text-left rounded-2xl border-2 shadow-sm h-[32vh] min-h-[124px] ${border} ${custom ? 'kds-custom' : ''} ${onClick ? 'active:bg-gray-50' : ''}`}
+            className={`relative w-full bg-white text-left rounded-2xl border-2 shadow-sm h-[32vh] min-h-[124px] ${border} ${onClick ? 'active:bg-gray-50' : ''}`}
         >
             <Backdrop img={img} />
             {entry && <AgeBadge oldest={entry.oldest} now={now} colorKey={colorKey} lang={lang} />}
+            {custom && <CustomBoxBadge lang={lang} />}
             <FlagBadge flag={flag} />
             <div className="relative z-10 h-full flex flex-col justify-between p-3 pt-4">
                 {/* shrink-0: the name must never be squeezed out by the quantities */}

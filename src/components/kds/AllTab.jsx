@@ -27,7 +27,7 @@ export default function AllTab({ config, agg, menuByKey, flags, now, lang, onOpe
     const slots = Array.from({ length: 4 }, (_, i) => config.featured[i] || null);
 
     return (
-        <div className="h-full flex flex-col gap-3 p-3 md:p-4">
+        <div className="h-full flex flex-col gap-3 px-3 pt-3 pb-2 md:p-4">
             {/* Part 1 — main boxes (always shown, fixed: they never scroll) */}
             <div className="grid grid-cols-4 gap-3 md:gap-4 shrink-0">
                 {slots.map((it, i) => {
@@ -64,18 +64,22 @@ export default function AllTab({ config, agg, menuByKey, flags, now, lang, onOpe
                 <div className="grid flex-1 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, gridTemplateRows: 'minmax(0, 1fr)' }}>
                     {columns.map((col, ci) => (
                         <section key={col.id} className={`min-h-0 overflow-y-auto px-1.5 ${ci > 0 ? 'border-l-2 border-gray-300' : ''}`}>
-                            <div className="space-y-1 py-0.5">
+                            {/* Rows share the column height: with up to 4 items they stretch to fill it (big tap targets),
+                                with more they stay at a 30px minimum, so 4 rows always fit a landscape phone
+                                and anything beyond scrolls. */}
+                            <div className="flex flex-col gap-1 py-0.5 min-h-full">
                                 {col.entries.map(entry => (
-                                    <KdsItemRow
-                                        key={entry.key}
-                                        name={entry.name}
-                                        entry={entry}
-                                        options={optionsOf(menuByKey, entry.key)}
-                                        colorKey={ageColor(entry.oldest, now, config.timer)}
-                                        flag={flags[entry.key]}
-                                        onClick={() => onOpen(entry.key, entry.name)}
-                                        lang={lang}
-                                    />
+                                    <div key={entry.key} className="flex-1 basis-0 min-h-[30px] max-h-[52px]">
+                                        <KdsItemRow
+                                            name={entry.name}
+                                            entry={entry}
+                                            options={optionsOf(menuByKey, entry.key)}
+                                            colorKey={ageColor(entry.oldest, now, config.timer)}
+                                            flag={flags[entry.key]}
+                                            onClick={() => onOpen(entry.key, entry.name)}
+                                            lang={lang}
+                                        />
+                                    </div>
                                 ))}
                             </div>
                         </section>

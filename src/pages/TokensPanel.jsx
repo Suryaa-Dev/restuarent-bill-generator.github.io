@@ -41,17 +41,6 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                         <p className={`text-lg font-extrabold leading-tight ${cancelled ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                             #{token.tokenNo}
                         </p>
-                        {/* one edit icon, beside the token number, once any item is served:
-                            reduce the quantity of a served dish the customer sent back */}
-                        {anyServed && onEditServed && (
-                            <button
-                                onClick={() => onEditServed(token)}
-                                aria-label={tx('editServedTitle', lang)}
-                                className="w-8 h-8 rounded-full bg-white border border-blue-300 text-blue-700 flex items-center justify-center active:bg-blue-50"
-                            >
-                                <Pencil size={15} />
-                            </button>
-                        )}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                         {token.isParcel && (
@@ -65,6 +54,17 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                     </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                    {/* one edit icon in the title bar, left of the time, once any item is served:
+                        reduce the quantity of a served dish the customer sent back */}
+                    {anyServed && onEditServed && (
+                        <button
+                            onClick={() => onEditServed(token)}
+                            aria-label={tx('editServedTitle', lang)}
+                            className="w-9 h-9 rounded-full bg-white border border-blue-300 text-blue-700 flex items-center justify-center active:bg-blue-50"
+                        >
+                            <Pencil size={16} />
+                        </button>
+                    )}
                     <span className="text-xs text-gray-500">{fmtTime(token.createdAt)}</span>
                 </div>
             </div>
@@ -89,6 +89,9 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                             <div className="flex items-center gap-2">
                                 <p className={`flex-1 min-w-0 font-semibold text-sm leading-snug ${dim ? 'line-through text-gray-400' : 'text-gray-900'}`}>
                                     {translateItemName(it.name, lang)}
+                                    {it.mods && it.mods.length > 0 && (
+                                        <span className={`block text-xs font-bold leading-snug ${dim ? 'text-gray-400 line-through' : 'text-indigo-600'}`}>{it.mods.join(', ')}</span>
+                                    )}
                                 </p>
                                 <span className={`w-8 shrink-0 text-center font-bold text-base ${dim ? 'text-gray-400' : 'text-gray-800'}`}>
                                     {it.qty}

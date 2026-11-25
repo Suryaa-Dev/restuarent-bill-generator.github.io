@@ -23,8 +23,8 @@ function CustomSummary({ rows, options, lang }) {
     return (
         <div className="shrink-0 mt-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {rows.map(r => (
-                <span key={r.mod} className="shrink-0 inline-flex items-baseline gap-1.5 rounded-full border border-indigo-100 bg-white px-3 py-1 text-[13px] leading-snug">
-                    <span className="font-bold text-gray-900">{r.mod}</span>
+                <span key={r.sig} className="shrink-0 inline-flex items-baseline gap-1.5 rounded-full border border-indigo-100 bg-white px-3 py-1 text-[13px] leading-snug">
+                    <span className="font-bold text-gray-900">{r.mods.join(', ')}</span>
                     <span className="font-semibold tabular-nums text-indigo-700">
                         {portionList(r.portions, options, false).map(([p, q]) => `${q} ${translatePortion(p, lang)}`).join(' | ')}
                     </span>

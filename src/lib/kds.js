@@ -72,19 +72,21 @@ export function aggregate(lines) {
     return m;
 }
 
-// Customization summary: for every modifier, how many pending portions carry it, per portion size.
-// One portion with two modifiers counts under both, so these totals are NOT item quantities.
+// Customization summary: one entry per DISTINCT SET of modifiers ("Spicy, Crispy"), with how many pending
+// portions have exactly that set, per portion size. A portion with two modifiers is therefore counted
+// once, as one portion, so the totals always add up to real portions.
 export function customSummary(lines) {
     const m = new Map();
     lines.forEach(l => {
-        (l.item.mods || []).forEach(mod => {
-            if (!m.has(mod)) m.set(mod, { mod, portions: {}, total: 0 });
-            const e = m.get(mod);
-            e.portions[l.item.portion] = (e.portions[l.item.portion] || 0) + l.qty;
-            e.total += l.qty;
-        });
+        const mods = l.item.mods;
+        if (!mods || mods.length === 0) return;
+        const sig = [...mods].sort().join('+');
+        if (!m.has(sig)) m.set(sig, { sig, mods, portions: {}, total: 0 });
+        const e = m.get(sig);
+        e.portions[l.item.portion] = (e.portions[l.item.portion] || 0) + l.qty;
+        e.total += l.qty;
     });
-    return [...m.values()].sort((a, b) => b.total - a.total || a.mod.localeCompare(b.mod));
+    return [...m.values()].sort((a, b) => b.total - a.total || a.sig.localeCompare(b.sig));
 }
 
 // [['Half', 6], ['Full', 2]] in the menu's portion order

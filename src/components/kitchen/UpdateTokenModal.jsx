@@ -244,7 +244,7 @@ export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang
                                         <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
                                         {translateItemName(r.name, lang)}
                                     </p>
-                                    {r.mods?.length > 0 && <p className="text-xs font-bold text-indigo-600">{r.mods.join(' · ')}</p>}
+                                    {r.mods?.length > 0 && <p className="text-xs font-bold text-indigo-600">{r.mods.join(', ')}</p>}
                                     <p className="text-sm text-gray-500">
                                         {translatePortion(r.portion, lang)}
                                         {r.isNew && (
