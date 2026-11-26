@@ -31,6 +31,7 @@ const CLIENT_ID = (() => {
 export function useTableLocks(branch, openTable, onLost) {
     const [lockedTables, setLockedTables] = useState({});
     const heldRef = useRef(null);          // table this device currently holds
+    const overrideRef = useRef(null);      // table opened with "Continue anyway" (nobody holds a lock for it here)
     const lostRef = useRef(onLost);
     lostRef.current = onLost;
     const branchRef = useRef(branch);
@@ -46,9 +47,12 @@ export function useTableLocks(branch, openTable, onLost) {
         setLockedTables(map);
     }, []);
 
-    const acquireLock = useCallback(async (table) => {
+    // opts.override: the person chose "Continue anyway" for a table another device has open. The cart opens
+    // without taking the lock (so the other device is NOT thrown out) and without keeping a heartbeat.
+    const acquireLock = useCallback(async (table, opts = {}) => {
         const b = branchRef.current;
         if (!b || table == null) return true;
+        if (opts.override) { overrideRef.current = table; return true; }
         const { data, error } = await supabase.rpc('acquire_table_lock', { p_branch: b, p_table: table, p_client: CLIENT_ID });
         if (error) {
             // never stop the restaurant because the lock service is unreachable
@@ -82,9 +86,11 @@ export function useTableLocks(branch, openTable, onLost) {
     // hold the lock while this table's cart is open; let go when it closes
     useEffect(() => {
         if (openTable == null) {
+            overrideRef.current = null;
             if (heldRef.current != null) release(heldRef.current);
             return undefined;
         }
+        if (overrideRef.current === openTable) return undefined; // opened anyway: no lock to keep alive
         let stopped = false;
         const keep = async () => {
             const ok = await acquireLock(openTable); // also re-checks that the lock is still ours

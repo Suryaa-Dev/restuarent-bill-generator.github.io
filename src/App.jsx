@@ -2235,12 +2235,13 @@ export default function RestaurantBillGenerator() {
     // Handle table click from All Tables grid
     // The database decides who gets a table: acquireLock is atomic, so only one device can open it.
     const lockOpeningRef = useRef(false);
+    const [lockPrompt, setLockPrompt] = useState(null); // { table, source } — table is open on another device
     const handleAllTablesTableClick = async (tableNum) => {
         if (lockOpeningRef.current) return;
         lockOpeningRef.current = true;
         try {
             if (!(await acquireLock(tableNum))) {
-                showToast(ts('tableBusy', lang).replace('{n}', tableNum));
+                setLockPrompt({ table: tableNum, source: 'grid' });
                 return;
             }
             setViewingTableFromAllTables(tableNum);
@@ -2256,13 +2257,23 @@ export default function RestaurantBillGenerator() {
         lockOpeningRef.current = true;
         try {
             if (selectedTable && !(await acquireLock(selectedTable))) {
-                showToast(ts('tableBusy', lang).replace('{n}', selectedTable));
+                setLockPrompt({ table: selectedTable, source: 'home' });
                 return;
             }
             setShowCartDrawer(true);
         } finally {
             lockOpeningRef.current = false;
         }
+    };
+
+    // "Continue anyway": open the cart although another device has it. Nobody is thrown out; both can edit.
+    const continueAnyway = async () => {
+        const p = lockPrompt;
+        setLockPrompt(null);
+        if (!p) return;
+        await acquireLock(p.table, { override: true });
+        if (p.source === 'grid') setViewingTableFromAllTables(p.table);
+        setShowCartDrawer(true);
     };
 
     // Close drawer handler
@@ -2594,6 +2605,28 @@ export default function RestaurantBillGenerator() {
                     onClose={() => setShowTableModal(false)}
                     lang={lang}
                 />
+            )}
+
+            {lockPrompt && (
+                <div className="fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-6" onClick={() => setLockPrompt(null)}>
+                    <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-start gap-3">
+                            <span className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center shrink-0"><Lock size={20} /></span>
+                            <div>
+                                <h3 className="font-bold text-lg leading-snug">{ts('tableBusyTitle', lang).replace('{n}', lockPrompt.table)}</h3>
+                                <p className="text-sm text-gray-600 mt-1">{ts('tableBusyWarn', lang)}</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={() => setLockPrompt(null)} className="flex-1 h-12 rounded-xl bg-gray-100 text-gray-800 font-bold active:bg-gray-200">
+                                {t('cancel', lang)}
+                            </button>
+                            <button onClick={continueAnyway} className="flex-1 h-12 rounded-xl bg-orange-500 text-white font-bold active:bg-orange-600">
+                                {ts('continueAnyway', lang)}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {toast && (

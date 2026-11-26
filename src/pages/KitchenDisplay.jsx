@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChefHat, Settings, X, Volume2, VolumeX, Maximize, RotateCw, Check, Play, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChefHat, Settings, X, Volume2, VolumeX, Check, Play, Undo2 } from 'lucide-react';
 import { t, translateItemName } from '../i18n/translations';
 import { tx } from '../i18n/kdsExtra';
 import { getSavedLanguage } from '../lib/branchMenu';
@@ -25,32 +25,36 @@ import { NotifyBanner, NotifyPanel } from '../components/kds/NotifyPanel';
 
 const KITCHEN_KEY = 'restaurant_kds_kitchen';
 
-// Undo what "Go landscape" did, so billing is free to rotate back to portrait
+// Undo the automatic landscape lock, so billing is free to rotate back to portrait
 function releaseOrientation() {
     try { window.screen.orientation?.unlock?.(); } catch { /* not supported */ }
     try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* not supported */ }
 }
 
-/* ---------- landscape prompt (the layout is built for landscape) ---------- */
-
-function RotatePrompt({ lang, onContinue }) {
-    const goLandscape = async () => {
-        try {
-            await document.documentElement.requestFullscreen?.();
-            await window.screen.orientation?.lock?.('landscape');
-        } catch { /* not supported — user can rotate manually */ }
-    };
-    return (
-        <div className="fixed inset-0 z-[90] bg-gray-900 text-white flex flex-col items-center justify-center text-center p-8">
-            <RotateCw size={56} className="mb-4 text-orange-400" />
-            <p className="text-xl font-bold mb-1">{t('kdsRotate', lang)}</p>
-            <p className="text-sm text-gray-300 max-w-xs mb-6">{t('kdsRotateDesc', lang)}</p>
-            <button onClick={goLandscape} className="w-full max-w-xs py-3 rounded-xl bg-orange-500 font-bold flex items-center justify-center gap-2 mb-3">
-                <Maximize size={18} /> {t('kdsGoLandscape', lang)}
-            </button>
-            <button onClick={onContinue} className="text-sm text-gray-400 underline">{t('kdsContinue', lang)}</button>
-        </div>
-    );
+/* ---------- landscape: the KDS layout is built for it, so it rotates by itself (no question asked) ----------
+   1. try to lock the screen to landscape (works in the installed app and, via fullscreen, right after a tap)
+   2. if the device won't allow it (iPhone, a plain browser tab) the KDS layout is turned 90 degrees instead
+      (.kds-forced-landscape in index.css), so it still shows in landscape without any prompt.            */
+function useAutoLandscape(portrait) {
+    const [forced, setForced] = useState(false);
+    useEffect(() => {
+        if (!portrait) { setForced(false); return undefined; }
+        let cancelled = false;
+        const lock = () => window.screen.orientation?.lock?.('landscape');
+        (async () => {
+            try { await lock(); }
+            catch {
+                try { await document.documentElement.requestFullscreen?.(); await lock(); }
+                catch { if (!cancelled) setForced(true); return; }
+            }
+            // locked but the screen did not turn (rotation switched off on the phone): fall back too
+            setTimeout(() => {
+                if (!cancelled && window.matchMedia('(orientation: portrait) and (max-width: 820px)').matches) setForced(true);
+            }, 700);
+        })();
+        return () => { cancelled = true; };
+    }, [portrait]);
+    return portrait && forced;
 }
 
 function usePortraitPhone() {
@@ -134,8 +138,8 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
     const [selected, setSelected] = useState(initial?.selected || null); // { key, name } — item page
     const [showSettings, setShowSettings] = useState(false);
     const [sound, setSound] = useState(isSoundOn());
-    const [skipRotate, setSkipRotate] = useState(false);
     const portrait = usePortraitPhone();
+    const forcedLandscape = useAutoLandscape(portrait);
 
     // ticking clock for the timer colours + expiring arrows
     // leaving the KDS (any way) hands rotation back to the device
@@ -265,8 +269,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
     const tabs = [['all', 'kdsAll'], ['table', 'kdsTable'], ['parcel', 'kdsParcel'], ...(batches ? [['batches', null]] : [])];
 
     return (
-        <div className="h-dvh bg-gray-100 flex flex-col overflow-hidden">
-            {portrait && !skipRotate && <RotatePrompt lang={lang} onContinue={() => setSkipRotate(true)} />}
+        <div className={`h-dvh bg-gray-100 flex flex-col overflow-hidden ${forcedLandscape ? 'kds-forced-landscape' : ''}`}>
 
             {/* navbar: kitchen name · [All][Table][Parcel] · settings */}
             <header className="shrink-0 z-40 bg-white border-b border-gray-200 px-3 md:px-4 py-2 flex items-center gap-3">

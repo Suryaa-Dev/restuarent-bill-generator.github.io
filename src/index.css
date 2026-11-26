@@ -87,3 +87,18 @@
 @media (prefers-reduced-motion: reduce) {
     .kds-orbit::after { animation: none; }
 }
+
+/* KDS fallback when the phone can't be locked to landscape: turn the whole KDS 90 degrees (no prompt).
+   The box is as wide as the screen is tall and vice versa, pinned top-left and swung into place. */
+.kds-forced-landscape {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    width: 100vh !important;
+    height: 100vw !important;
+    width: 100dvh !important;
+    height: 100dvw !important;
+    transform-origin: top left;
+    transform: translateX(100vw) rotate(90deg);
+    transform: translateX(100dvw) rotate(90deg);
+}
