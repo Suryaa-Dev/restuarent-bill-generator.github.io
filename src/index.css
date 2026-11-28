@@ -88,6 +88,23 @@
     .kds-orbit::after { animation: none; }
 }
 
+/* KDS sizes use these instead of vw / vh, so they stay right when the layout is turned 90 degrees
+   (then the KDS width is the screen HEIGHT and its height the screen WIDTH). */
+.kds-root {
+    --kds-vw: 1vw;
+    --kds-vh: 1vh;
+}
+@supports (height: 1dvh) {
+    .kds-root { --kds-vw: 1dvw; --kds-vh: 1dvh; }
+}
+.kds-root.kds-forced-landscape {
+    --kds-vw: 1vh;
+    --kds-vh: 1vw;
+}
+@supports (height: 1dvh) {
+    .kds-root.kds-forced-landscape { --kds-vw: 1dvh; --kds-vh: 1dvw; }
+}
+
 /* KDS fallback when the phone can't be locked to landscape: turn the whole KDS 90 degrees (no prompt).
    The box is as wide as the screen is tall and vice versa, pinned top-left and swung into place. */
 .kds-forced-landscape {

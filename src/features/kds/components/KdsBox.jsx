@@ -6,10 +6,10 @@ import { BORDER, FILL, TEXT, ageMinutes, portionList } from '../utils/kds';
 
 const SIZE = {
     // main boxes: size follows BOTH width and height so it always fits a short landscape phone
-    xl: { num: 'text-[clamp(1.6rem,min(4.4vw,10vh),3rem)]', label: 'text-[clamp(.7rem,1.4vw,.95rem)]', gap: 'gap-4 md:gap-7' },
-    lg: { num: 'text-[clamp(1.5rem,3.4vw,2.4rem)]', label: 'text-xs md:text-sm', gap: 'gap-5 md:gap-8' },
+    xl: { num: 'text-[length:clamp(1.6rem,min(calc(var(--kds-vw)*4.4),calc(var(--kds-vh)*10)),3rem)]', label: 'text-[length:clamp(.7rem,calc(var(--kds-vw)*1.4),.95rem)]', gap: 'gap-4 md:gap-7' },
+    lg: { num: 'text-[length:clamp(1.5rem,calc(var(--kds-vw)*3.4),2.4rem)]', label: 'text-xs md:text-sm', gap: 'gap-5 md:gap-8' },
     // compact totals (item page): smaller numbers, tighter gaps
-    md: { num: 'text-[clamp(1.15rem,2.3vw,1.6rem)]', label: 'text-[11px] md:text-xs', gap: 'gap-3 md:gap-5' },
+    md: { num: 'text-[length:clamp(1.15rem,calc(var(--kds-vw)*2.3),1.6rem)]', label: 'text-[11px] md:text-xs', gap: 'gap-3 md:gap-5' },
 };
 
 // Quantities as big numbers with a small portion label underneath.
@@ -126,7 +126,7 @@ export default function KdsBox({ name, entry, options, colorKey, flag, small, sh
         <button
             onClick={onClick}
             disabled={!onClick}
-            className={`relative w-full bg-white text-left rounded-2xl border-2 shadow-sm h-[32vh] min-h-[120px] ${border} ${onClick ? 'active:bg-gray-50' : ''}`}
+            className={`relative w-full bg-white text-left rounded-2xl border-2 shadow-sm h-[calc(var(--kds-vh)*32)] min-h-[120px] ${border} ${onClick ? 'active:bg-gray-50' : ''}`}
         >
             <Backdrop img={img} />
             {entry && <AgeBadge oldest={entry.oldest} now={now} colorKey={colorKey} lang={lang} />}
@@ -134,7 +134,7 @@ export default function KdsBox({ name, entry, options, colorKey, flag, small, sh
             <FlagBadge flag={flag} />
             <div className="relative z-10 h-full flex flex-col justify-between p-3 pt-4">
                 {/* shrink-0: the name must never be squeezed out by the quantities */}
-                <span className="shrink-0 font-bold text-gray-900 leading-tight line-clamp-2 text-[clamp(.95rem,2.2vw,1.4rem)]">
+                <span className="shrink-0 font-bold text-gray-900 leading-tight line-clamp-2 text-[length:clamp(.95rem,calc(var(--kds-vw)*2.2),1.4rem)]">
                     {translateItemName(name, lang)}
                 </span>
                 <PortionBlocks portions={entry?.portions} options={options} showZero={showZero} lang={lang} size="xl" align="start" />

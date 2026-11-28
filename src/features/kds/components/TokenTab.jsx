@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { t, translateCategory } from '../../../i18n/translations';
 import KdsTokenCard from './KdsTokenCard';
 
+// width the KDS really has: when the layout is turned 90 degrees (.kds-forced-landscape) that is the screen height
+const kdsWidth = () => (document.querySelector('.kds-forced-landscape') ? window.innerHeight : window.innerWidth);
+
 const colsFor = (w) => (w >= 1280 ? 4 : w >= 1024 ? 3 : 2);
 const byAge = (a, b) => a.token.createdAt.localeCompare(b.token.createdAt) || a.token.seq - b.token.seq;
 
@@ -35,9 +38,9 @@ export default function TokenTab({ mode, lines, kitchenId, now, timer, lang, onS
     const visible = cat ? groups.filter(g => g.pendingCats.has(cat)) : groups;
 
     // number of columns follows the screen width (same breakpoints as before: 2 / 3 / 4)
-    const [colCount, setColCount] = useState(() => colsFor(window.innerWidth));
+    const [colCount, setColCount] = useState(() => colsFor(kdsWidth()));
     useEffect(() => {
-        const on = () => setColCount(colsFor(window.innerWidth));
+        const on = () => setColCount(colsFor(kdsWidth()));
         window.addEventListener('resize', on);
         return () => window.removeEventListener('resize', on);
     }, []);

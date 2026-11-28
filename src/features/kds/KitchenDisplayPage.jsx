@@ -57,6 +57,22 @@ function useAutoLandscape(portrait) {
         })();
         return () => { cancelled = true; };
     }, [portrait]);
+
+    // Re-opened from the home screen the phone refuses the landscape lock (no tap yet), so the turned
+    // layout is used. The first tap allows it: try the real lock again; once the phone turns,
+    // `portrait` becomes false and the turned layout switches off by itself.
+    useEffect(() => {
+        if (!portrait || !forced) return undefined;
+        const retry = async () => {
+            try {
+                if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+                await window.screen.orientation?.lock?.('landscape');
+            } catch { /* not allowed on this device: keep the turned layout */ }
+        };
+        window.addEventListener('pointerdown', retry, { once: true });
+        return () => window.removeEventListener('pointerdown', retry);
+    }, [portrait, forced]);
+
     return portrait && forced;
 }
 
@@ -213,7 +229,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
     const tabs = [['all', 'kdsAll'], ['table', 'kdsTable'], ['parcel', 'kdsParcel'], ...(batches ? [['batches', null]] : [])];
 
     return (
-        <div className={`h-dvh bg-gray-100 flex flex-col overflow-hidden ${forcedLandscape ? 'kds-forced-landscape' : ''}`}>
+        <div className={`kds-root h-dvh bg-gray-100 flex flex-col overflow-hidden ${forcedLandscape ? 'kds-forced-landscape' : ''}`}>
 
             {/* navbar: kitchen name · [All][Table][Parcel] · settings */}
             <header className="shrink-0 z-40 bg-white border-b border-gray-200 px-3 md:px-4 py-2 flex items-center gap-3">
@@ -310,7 +326,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
             )}
 
             {toast && (
-                <div key={toast.id} className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] max-w-[92vw] bg-gray-900 text-white rounded-full pl-4 pr-1.5 py-1.5 flex items-center gap-3 shadow-xl">
+                <div key={toast.id} className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(var(--kds-vw)*92)] bg-gray-900 text-white rounded-full pl-4 pr-1.5 py-1.5 flex items-center gap-3 shadow-xl">
                     <Check size={18} className="text-green-400 shrink-0" />
                     <span className="text-sm font-semibold truncate">
                         {tx('servedToast', lang)} · #{toast.tokenNo} · {translateItemName(toast.name, lang)}

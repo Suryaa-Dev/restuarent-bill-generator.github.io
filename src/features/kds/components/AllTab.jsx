@@ -33,7 +33,7 @@ export default function AllTab({ config, agg, menuByKey, flags, now, lang, onOpe
                 {slots.map((it, i) => {
                     if (!it) {
                         return (
-                            <div key={i} className="rounded-2xl border-2 border-dashed border-gray-300 h-[32vh] min-h-[124px] flex items-center justify-center text-center text-xs text-gray-400 px-3">
+                            <div key={i} className="rounded-2xl border-2 border-dashed border-gray-300 h-[calc(var(--kds-vh)*32)] min-h-[124px] flex items-center justify-center text-center text-xs text-gray-400 px-3">
                                 {config.featured.length === 0 && i === 0 ? t('kdsSetupBoxes', lang) : ''}
                             </div>
                         );
