@@ -7,6 +7,7 @@ import { useLongPress } from '../../../shared/hooks/useLongPress';
 import { mergeLines, pickPlusIndex, pickMinusIndex } from '../utils/customize';
 import { computeSentQty } from '../../kitchens/utils/kitchenLogic';
 import TokensPanel from './tokens/TokensPanel';
+import EtaChip from './EtaChip';
 import { renderBillRows, SentNotice } from './BillRows';
 
 // fixed bill section on desktop
@@ -33,8 +34,9 @@ const BillSection = ({ selectedTable, currentBill, total, onChangeQuantity, onPr
         <div className="hidden md:flex w-[25%] bg-white p-4 flex-col border-l border-gray-400 bill-section-fixed">
 
             {/* current table info */}
-            <h3 className="text-center text-xl font-bold text-gray-700 mb-3">
+            <h3 className="text-center text-xl font-bold text-gray-700 mb-3 flex items-center justify-center gap-2 flex-wrap">
                 {selectedTable ? `${t('billFor', lang)} ${selectedTable}` : t('billSelectTable', lang)}
+                {kitchen && <EtaChip eta={kitchen.eta} lang={lang} />}
             </h3>
 
             {/* scrollable bill items (or token cards) */}

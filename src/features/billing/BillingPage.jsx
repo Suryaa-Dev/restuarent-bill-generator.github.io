@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { t } from '../../i18n/translations';
 import { ta } from '../../i18n/adminExtra';
@@ -36,6 +37,8 @@ import { useMenuView } from './hooks/useMenuView';
 import { useTableLocks } from './hooks/useTableLocks';
 import { useBillActions } from './hooks/useBillActions';
 import { useTokenActions } from './hooks/useTokenActions';
+import { useParcelEta } from './hooks/useParcelEta';
+import { roundEtaMinutes } from './utils/parcelEta';
 import { billQuantity, billTotal } from './utils/billMath';
 import { billingPermissions } from './utils/billingPermissions';
 import { buildUnits, groupIndexes } from './utils/customize';
@@ -63,9 +66,9 @@ import UpdateTokenModal from './components/tokens/UpdateTokenModal';
    useTokenActions; this file wires them to the screen and decides what the user may see. */
 export default function BillingPage() {
     const navigate = useNavigate();
-    const { can } = useAuth();
+    const { can, branches } = useAuth();
     const tables = TABLE_NUMBERS;
-    const { toast, showToast } = useToast();
+    const { toast, showToast, hideToast } = useToast();
     const pwa = usePwaInstall();
 
     // ---- device preferences ----
@@ -117,6 +120,7 @@ export default function BillingPage() {
     const { visibleItems, categories, favoriteItems, shownItems, isRatePickerOnly } =
         useMenuView({ menuItems, favoriteIds, itemFrequency, selectedCategory });
     const kitchenLookup = useMemo(() => buildKitchenLookup(menuItems), [menuItems]);
+    const parcelEta = useParcelEta({ branch, enabled: kitchenMode, kitchens });
 
     // ---- table cart locks: only ONE device can have a table's cart open at a time ----
     const lockConflictRef = useRef(null);
@@ -155,7 +159,18 @@ export default function BillingPage() {
             }
         },
     });
-    const tokenActions = useTokenActions({ branch, lang, kitchenLookup, bills: billsApi, kitchen: kitchenApi, allow });
+    const tokenActions = useTokenActions({
+        branch, lang, kitchenLookup, bills: billsApi, kitchen: kitchenApi, allow,
+        estimateParcel: parcelEta.estimate,
+        // a parcel token was just sent: tell the waiter what to tell the customer
+        onParcelSent: (token, eta) => showToast(
+            ta('etaSentToast', lang)
+                .replace('{token}', token.tokenNo)
+                .replace('{min}', roundEtaMinutes(eta.minutes))
+                .replace('{time}', new Date(eta.readyAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })),
+            { icon: Clock, tone: 'info', durationMs: 9000 }
+        ),
+    });
 
     const printBill = () => {
         const table = viewingTableFromAllTables || selectedTable;
@@ -323,6 +338,8 @@ export default function BillingPage() {
         const tableTokens = table ? tokens.filter(tk => tk.tableNumber === table) : [];
         const analysis = analyzeBill(bill, tableTokens, kitchenLookup);
         return {
+            // parcel: estimated minutes until ready (promised time of sent parcel tokens / estimate for the cart)
+            eta: parcelEta.forTable(tableTokens, analysis.items.filter(i => i.isParcel), tokens),
             tokens: tableTokens,
             kitchens,
             unsentCount: analysis.count,
@@ -345,7 +362,7 @@ export default function BillingPage() {
     };
 
     if (showBranchModal) {
-        return <BranchSelectModal lang={lang} onSelect={handleSelectBranch} />;
+        return <BranchSelectModal lang={lang} branches={branches} onSelect={handleSelectBranch} />;
     }
 
     if (loading) {
@@ -463,7 +480,7 @@ export default function BillingPage() {
                 <TableBusyDialog table={lockPrompt.table} lang={lang} onCancel={() => setLockPrompt(null)} onContinue={continueAnyway} />
             )}
 
-            <Toast message={toast} />
+            <Toast toast={toast} onClose={hideToast} />
 
             {showCartDrawer && (
                 <CartDrawer
@@ -608,6 +625,8 @@ export default function BillingPage() {
                     token={updateTarget}
                     menuItems={visibleItems}
                     favoriteItems={favoriteItems}
+                    modifiers={modifiers}
+                    canCustomize={perms.customize}
                     lang={lang}
                     onSave={handleSaveTokenUpdate}
                     onClose={() => setUpdateTarget(null)}

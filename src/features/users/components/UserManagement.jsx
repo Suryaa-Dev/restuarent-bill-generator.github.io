@@ -5,6 +5,7 @@ import { t } from '../../../i18n/translations';
 import { listUsers, userErrorCode } from '../../../services/usersService';
 import { useAuth } from '../../auth/AuthProvider';
 import { ROLES, normalizePermissions } from '../../auth/permissions';
+import { branchLabel } from '../../../shared/utils/devicePrefs';
 import UserEditor from './UserEditor';
 
 /* Settings -> Users & permissions (owner / admin only). */
@@ -95,7 +96,7 @@ export default function UserManagement({ lang, onClose }) {
                                                 <span className="block text-xs text-gray-500 truncate">
                                                     @{u.username} · {u.role === ROLES.ADMIN
                                                         ? ta('fullAccess', lang)
-                                                        : `${count} ${ta(count === 1 ? 'permissionOne' : 'permissionMany', lang)}`}
+                                                        : `${count} ${ta(count === 1 ? 'permissionOne' : 'permissionMany', lang)} · ${u.branches.length ? u.branches.map(b => branchLabel(b, lang)).join(', ') : ta('branchAll', lang)}`}
                                                 </span>
                                             </span>
                                             {u.role === ROLES.ADMIN && <ShieldCheck size={18} className="text-orange-500 shrink-0" />}

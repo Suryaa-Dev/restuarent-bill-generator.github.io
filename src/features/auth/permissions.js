@@ -11,6 +11,8 @@
    Labels / descriptions live in i18n/adminExtra.js under `perm.<key>` and `perm.<key>.desc`.
    ===================================================================== */
 
+import { BRANCH_OPTIONS } from '../../shared/utils/devicePrefs';
+
 export const ROLES = { ADMIN: 'admin', STAFF: 'staff' };
 
 export const PERMISSIONS = {
@@ -38,7 +40,6 @@ export const PERMISSIONS = {
 
     // kitchen display
     KDS_SERVE: 'kds.serve',
-    KDS_BATCHES: 'kds.batches',
 
     // history
     HISTORY_DELETE: 'history.deleteBills',
@@ -92,7 +93,6 @@ export const PERMISSION_GROUPS = [
         id: 'kds',
         items: [
             { key: P.KDS_SERVE, requires: P.KDS_VIEW },
-            { key: P.KDS_BATCHES, requires: P.KDS_VIEW },
         ],
     },
     {
@@ -133,7 +133,7 @@ export const PERMISSION_PRESETS = [
     },
     {
         id: 'kitchen',
-        permissions: [P.KDS_VIEW, P.KDS_SERVE, P.KDS_BATCHES],
+        permissions: [P.KDS_VIEW, P.KDS_SERVE],
     },
     {
         id: 'manager',
@@ -168,6 +168,22 @@ export function hasPermission(account, key) {
     if (account.role === ROLES.ADMIN) return true;
     if (REQUIRES[key] && !(account.permissions || []).includes(REQUIRES[key])) return false;
     return (account.permissions || []).includes(key);
+}
+
+/* Branches: admins work in every branch. A staff account has a list of branch ids; an EMPTY list
+   means "all branches" (also true for accounts created before branches could be chosen).
+   The database checks the same rule (app_branch_ok in the SQL). */
+export const ALL_BRANCH_IDS = BRANCH_OPTIONS.map(b => b.id);
+
+export function hasAllBranches(account) {
+    if (!account) return false;
+    return account.role === ROLES.ADMIN || !(account.branches || []).length;
+}
+
+export function allowedBranches(account) {
+    if (!account) return [];
+    if (hasAllBranches(account)) return ALL_BRANCH_IDS;
+    return ALL_BRANCH_IDS.filter(id => account.branches.includes(id));
 }
 
 // Where to send someone after login (or when they open a page they may not use).

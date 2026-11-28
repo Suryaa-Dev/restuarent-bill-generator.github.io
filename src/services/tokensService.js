@@ -21,8 +21,13 @@ export function normalizeToken(row) {
         archived: !!row.archived,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        etaMinutes: row.eta_minutes ?? null, // parcel: estimated minutes told to the customer
+        etaAt: row.eta_at ?? null,           // parcel: estimated ready time
     };
 }
+
+// column not in the database yet (the parcel-estimate SQL has not been run): retry without it
+const isMissingColumn = (error) => error && (error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist|schema cache/i.test(error.message || ''));
 
 export async function fetchActiveTokens(branch) {
     const { data, error } = await supabase
@@ -37,7 +42,9 @@ export async function fetchActiveTokens(branch) {
 
 // Fires a new token. Picks the next number for the table; if another device grabbed the
 // same number a moment ago (unique index), re-reads the table's latest number and retries.
-export async function createToken({ branch, table, items, isParcel, existing }) {
+// eta = { minutes, readyAt } for parcel tokens (optional)
+export async function createToken({ branch, table, items, isParcel, existing, eta }) {
+    let withEta = !!eta;
     let seq = Math.max(0, ...existing.map(t => t.seq)) + 1;
     for (let attempt = 0; attempt < 4; attempt++) {
         const { data, error } = await supabase
@@ -49,10 +56,12 @@ export async function createToken({ branch, table, items, isParcel, existing }) 
                 token_no: formatTokenNo(table, seq),
                 items,
                 is_parcel: !!isParcel,
+                ...(withEta ? { eta_minutes: eta.minutes, eta_at: new Date(eta.readyAt).toISOString() } : {}),
             })
             .select()
             .single();
         if (!error) return normalizeToken(data);
+        if (withEta && isMissingColumn(error)) { withEta = false; attempt -= 1; continue; }
         if (error.code !== '23505') throw error;
 
         const { data: rows, error: readErr } = await supabase

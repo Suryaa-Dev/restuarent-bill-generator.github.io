@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { ShoppingCart, ChefHat, Clock, Users, Repeat, UtensilsCrossed, AlertTriangle, CheckCircle2, Flame } from 'lucide-react';
+import { ShoppingCart, ChefHat, Clock, Users, Repeat, UtensilsCrossed, AlertTriangle, HelpCircle } from 'lucide-react';
 import { fetchTimelineRows } from '../../../services/reportsService';
 import { fetchKitchens } from '../../../services/kitchensService';
 import { ageColor, normalizeConfig, DEFAULT_TIMER } from '../../kds/utils/kds';
 import { toISTParts, formatHour } from '../../../shared/utils/time';
 import { ChartCard, InsightCard, LoadingBlock } from './shared';
 
-/* Service Speed = two views of the per-dish timing log (item_timeline):
+/* Service Speed, written for the owner / manager (no technical terms on screen).
+   Built from the per-dish timing log (item_timeline):
 
    SERVICE   how fast the KITCHEN delivers each dish: token sent -> served, judged with the same
              green / yellow / orange / red limits as the KDS timer (set per kitchen in KDS settings).
@@ -28,7 +29,9 @@ const LONG_WAIT_MIN = 25;               // an order round that took longer than 
 const BANDS = ['green', 'yellow', 'orange', 'red'];
 const BAND_HEX = { green: '#22c55e', yellow: '#fbbf24', orange: '#f97316', red: '#ef4444' };
 const BAND_BG = { green: 'bg-green-500', yellow: 'bg-amber-400', orange: 'bg-orange-500', red: 'bg-red-500' };
-const BAND_NAME = { green: 'Green', yellow: 'Yellow', orange: 'Orange', red: 'Red' };
+const BAND_NAME = { green: 'On time', yellow: 'Getting late', orange: 'Late', red: 'Very late' };
+const BAND_TEXT = { green: 'text-green-700', yellow: 'text-amber-700', orange: 'text-orange-700', red: 'text-red-700' };
+const BAND_SOFT = { green: 'bg-green-50 border-green-200', yellow: 'bg-amber-50 border-amber-200', orange: 'bg-orange-50 border-orange-200', red: 'bg-red-50 border-red-200' };
 
 const secs = (a, b, max) => {
   if (!a || !b) return null;
@@ -51,10 +54,12 @@ const median = (list) => {
   const mid = Math.floor(v.length / 2);
   return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
 };
-const fmt = (s) => {
+// plain "12 min" (or "1 h 5 min") for people, not "12m 05s"
+const fmtMin = (s) => {
   if (s === null || s === undefined) return '—';
-  const m = Math.floor(s / 60), r = Math.round(s % 60);
-  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m ${String(r).padStart(2, '0')}s`;
+  const m = Math.max(0, Math.round(s / 60));
+  if (m < 1) return 'under 1 min';
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
 };
 const mins = (s) => (s === null || s === undefined ? null : Math.round((s / 60) * 10) / 10);
 const bucketOf = (value, edges) => {
@@ -71,14 +76,6 @@ const bandShares = (rows) => {
   const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
   return { total, counts: c, pct: { green: pct(c.green), yellow: pct(c.yellow), orange: pct(c.orange), red: pct(c.red) } };
 };
-
-const BandBar = ({ shares }) => (
-  shares.total === 0 ? <span className="text-gray-300">—</span> : (
-    <div className="flex h-3 w-28 rounded overflow-hidden bg-gray-100" title={BANDS.map(b => `${BAND_NAME[b]} ${shares.pct[b]}%`).join(' · ')}>
-      {BANDS.map(b => shares.counts[b] > 0 && <div key={b} className={BAND_BG[b]} style={{ width: `${(shares.counts[b] / shares.total) * 100}%` }} />)}
-    </div>
-  )
-);
 
 export default function ServiceTimingTab({ range, branch }) {
   const [rows, setRows] = useState([]);
@@ -114,14 +111,19 @@ export default function ServiceTimingTab({ range, branch }) {
     const m = new Map(kitchens.map(k => [k.id, normalizeConfig(k.kdsConfig).timer]));
     return (id) => m.get(id) || DEFAULT_TIMER;
   }, [kitchens]);
-  const legend = useMemo(() => {
+  // the KDS timer limits, to explain each colour in minutes (null when kitchens use different limits)
+  const limits = useMemo(() => {
     const timers = kitchens.length ? kitchens.map(k => normalizeConfig(k.kdsConfig).timer) : [DEFAULT_TIMER];
     const same = timers.every(t => t.green === timers[0].green && t.yellow === timers[0].yellow && t.orange === timers[0].orange);
-    const t = timers[0];
-    return same
-      ? `Green ≤ ${t.green} min · Yellow ≤ ${t.yellow} · Orange ≤ ${t.orange} · Red > ${t.orange} min (your KDS timer)`
-      : "Each kitchen's own KDS timer limits are used";
+    return same ? timers[0] : null;
   }, [kitchens]);
+  const bandRange = (b) => {
+    if (!limits) return '';
+    if (b === 'green') return `within ${limits.green} min`;
+    if (b === 'yellow') return `${limits.green}–${limits.yellow} min`;
+    if (b === 'orange') return `${limits.yellow}–${limits.orange} min`;
+    return `over ${limits.orange} min`;
+  };
 
   const data = useMemo(() => rows.map(r => {
     const serve = secs(r.sent_at, r.served_at, MAX_STEP_S);
@@ -151,7 +153,7 @@ export default function ServiceTimingTab({ range, branch }) {
     servedRows.forEach(r => { if (r.hour !== null) (m[r.hour] = m[r.hour] || []).push(r); });
     return Object.keys(m).map(Number).sort((a, b) => a - b).map(h => {
       const sh = bandShares(m[h]);
-      return { label: formatHour(h), ...sh.pct, avg: mins(wavg(m[h], 'serve')), dishes: sh.total };
+      return { label: formatHour(h), ...sh.counts, avg: mins(wavg(m[h], 'serve')), dishes: sh.total };
     });
   }, [servedRows]);
 
@@ -289,13 +291,13 @@ export default function ServiceTimingTab({ range, branch }) {
 
   const longestSits = useMemo(() => dineIn.filter(v => v.sit !== null).sort((a, b) => b.sit - a.sit).slice(0, 8), [dineIn]);
 
-  if (busy) return <LoadingBlock label="Loading timing log..." />;
+  if (busy) return <LoadingBlock label="Loading service times..." />;
   if (error) return <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>;
   if (!data.length) {
     return (
       <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-        <p className="text-lg font-semibold text-gray-700">No timing data in this period</p>
-        <p className="text-sm text-gray-500 mt-1">Timings are recorded for bills cleared after this feature was installed.</p>
+        <p className="text-lg font-semibold text-gray-700">No service times in this period</p>
+        <p className="text-sm text-gray-500 mt-1">Times are recorded when a bill is cleared in Kitchen System mode and the dishes are marked served.</p>
       </div>
     );
   }
@@ -308,45 +310,72 @@ export default function ServiceTimingTab({ range, branch }) {
       </table>
     </div>
   );
-  const pctCell = (sh) => (
-    <span className="text-xs tabular-nums whitespace-nowrap">
-      <span className="text-green-600 font-semibold">{sh.pct.green}%</span>{' '}
-      <span className="text-amber-500 font-semibold">{sh.pct.yellow}%</span>{' '}
-      <span className="text-orange-600 font-semibold">{sh.pct.orange}%</span>{' '}
-      <span className="text-red-600 font-semibold">{sh.pct.red}%</span>
-    </span>
-  );
-  const shownDishes = showAllDishes ? dishTable : dishTable.slice(0, 12);
+  // quantity in each colour, e.g.  12 · 3 · 1 · 0
+  const qtyCells = (sh) => BANDS.map(b => (
+    <td key={b} className={`pr-4 tabular-nums font-semibold ${sh.counts[b] ? BAND_TEXT[b] : 'text-gray-300'}`}>{sh.counts[b]}</td>
+  ));
+  const shownDishes = showAllDishes ? dishTable : dishTable.slice(0, 10);
+  const onTimePct = svc.shares.pct.green + svc.shares.pct.yellow;
+  const verdict = svc.shares.total === 0 ? null
+    : onTimePct >= 85 ? { text: 'Good', tone: 'bg-green-100 text-green-800' }
+    : onTimePct >= 65 ? { text: 'Okay — some dishes are slow', tone: 'bg-amber-100 text-amber-800' }
+    : { text: 'Slow — needs attention', tone: 'bg-red-100 text-red-800' };
 
   return (
     <div className="space-y-6">
-      {/* =============== SERVICE =============== */}
+      {/* =============== KITCHEN SPEED =============== */}
       <div>
-        <h2 className="text-xl font-bold text-gray-900">Service timing</h2>
-        <p className="text-sm text-gray-500">How fast the kitchen serves each dish after the token is sent, judged with your KDS timer colours.</p>
-        <p className="text-xs text-gray-400 mt-1">{legend}</p>
+        <h2 className="text-xl font-bold text-gray-900">How fast does food reach the customer?</h2>
+        <p className="text-sm text-gray-500">Counted from the moment an order is sent to the kitchen until the dish is marked served.</p>
       </div>
+
+      {/* the short answer */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-gray-500">In short</p>
+          {verdict && <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${verdict.tone}`}>{verdict.text}</span>}
+        </div>
+        <p className="text-lg text-gray-900 leading-snug">
+          Food usually reached the customer <b>{fmtMin(svc.serveMedian)}</b> after the order went to the kitchen.{' '}
+          <b>{onTimePct}%</b> of dishes ({svc.shares.counts.green + svc.shares.counts.yellow} of {svc.shares.total}) were served on time or only a little late.
+        </p>
+        {svc.wait !== null && (
+          <p className="text-sm text-gray-600">Waiters took about <b>{fmtMin(svc.waitMedian)}</b> to send an order to the kitchen after adding it to the bill.</p>
+        )}
+      </div>
+
+      {/* quantity served at each speed */}
+      <ChartCard title="Dishes served at each speed" subtitle="Number of dishes (portions), using the same colours as the kitchen screen">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {BANDS.map(b => (
+            <div key={b} className={`rounded-xl border p-4 ${BAND_SOFT[b]}`}>
+              <p className={`flex items-center gap-2 text-sm font-bold ${BAND_TEXT[b]}`}><span className={`w-3 h-3 rounded-full ${BAND_BG[b]}`} /> {BAND_NAME[b]}</p>
+              <p className="text-3xl font-extrabold text-gray-900 mt-1 tabular-nums">{svc.shares.counts[b]}</p>
+              <p className="text-xs text-gray-600">dishes · {svc.shares.pct[b]}%{bandRange(b) ? ` · ${bandRange(b)}` : ''}</p>
+            </div>
+          ))}
+        </div>
+        {svc.notServed > 0 && (
+          <p className="text-xs text-gray-500 mt-3">{svc.notServed} dishes sent to the kitchen were never marked served, so they are not counted. Tap “Serve” on every dish to keep these numbers right.</p>
+        )}
+      </ChartCard>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <InsightCard icon={<ShoppingCart size={22} />} title="Waiter wait" value={fmt(svc.wait)} subtitle={`cart → token sent · median ${fmt(svc.waitMedian)}`} color="bg-blue-500" />
-        <InsightCard icon={<ChefHat size={22} />} title="Serve time" value={fmt(svc.serve)} subtitle={`token sent → served · median ${fmt(svc.serveMedian)}`} color="bg-orange-500" />
-        <InsightCard icon={<CheckCircle2 size={22} />} title="Served in green" value={`${svc.shares.pct.green}%`} subtitle={`${svc.shares.pct.yellow}% yellow · ${svc.shares.pct.orange}% orange`} color="bg-green-500" />
-        <InsightCard icon={<Flame size={22} />} title="Served in red" value={`${svc.shares.pct.red}%`} subtitle="slower than the KDS red limit" color="bg-red-500" />
+        <InsightCard icon={<ChefHat size={22} />} title="Kitchen time" value={fmtMin(svc.serveMedian)} subtitle="order sent → dish served (usual)" color="bg-orange-500" />
+        <InsightCard icon={<ShoppingCart size={22} />} title="Waiter time" value={fmtMin(svc.waitMedian)} subtitle="dish added → order sent (usual)" color="bg-blue-500" />
+        <InsightCard icon={<Users size={22} />} title="Wait for the whole order" value={fmtMin(cust.waitAllMedian)} subtitle="dine-in, order taken → all dishes served" color="bg-red-500" />
+        <InsightCard icon={<Clock size={22} />} title="Time at the table" value={fmtMin(cust.sitMedian)} subtitle="dine-in, first item → bill cleared" color="bg-indigo-500" />
       </div>
-      <p className="text-xs text-gray-500">
-        {kitchenRows.length} dish lines from {new Set(data.map(r => r.bill_id)).size} bills.
-        {svc.notServed > 0 && ` ${svc.notServed} sent dishes were never marked served and are left out.`} Quantity-weighted averages.
-      </p>
 
-      <ChartCard title="Serve speed by hour" subtitle="Share of dishes in each KDS colour, by the hour the token was sent (IST). Hover for the average.">
+      <ChartCard title="Busy hours: when does the kitchen slow down?" subtitle="Dishes served each hour (by the time the order was sent), split by speed. Tall red / orange parts = the kitchen fell behind.">
         {byHour.length === 0 ? <p className="text-sm text-gray-400">No served dishes yet.</p> : (
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byHour}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} unit="%" domain={[0, 100]} />
-                <Tooltip formatter={(v, n) => [`${v}%`, BAND_NAME[n]]} labelFormatter={(l, p) => `${l} · avg ${p?.[0]?.payload?.avg ?? '—'} min · ${p?.[0]?.payload?.dishes ?? 0} dishes`} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v, n) => [`${v} dishes`, BAND_NAME[n]]} labelFormatter={(l, p) => `${l} · usually ${p?.[0]?.payload?.avg ?? '—'} min · ${p?.[0]?.payload?.dishes ?? 0} dishes`} />
                 <Legend formatter={(n) => BAND_NAME[n]} />
                 {BANDS.map(b => <Bar key={b} dataKey={b} stackId="s" fill={BAND_HEX[b]} />)}
               </BarChart>
@@ -355,33 +384,28 @@ export default function ServiceTimingTab({ range, branch }) {
         )}
       </ChartCard>
 
-      <ChartCard
-        title="Dish-wise service"
-        subtitle="Every dish, its average and how often it lands in each KDS colour (green · yellow · orange · red)"
-      >
+      <ChartCard title="Which dishes are slow?" subtitle="How many portions of each dish were served at each speed">
         <div className="flex items-center gap-2 mb-3">
-          <span className="text-xs text-gray-500">Sort</span>
+          <span className="text-xs text-gray-500">Show first</span>
           <select value={dishSort} onChange={e => setDishSort(e.target.value)} className="text-sm border border-gray-300 rounded-lg px-2 py-1 bg-white">
-            <option value="red">Most in red</option>
-            <option value="slow">Slowest average</option>
+            <option value="red">Most often very late</option>
+            <option value="slow">Takes longest</option>
             <option value="most">Most served</option>
           </select>
         </div>
         {dishTable.length === 0 ? <p className="text-sm text-gray-400">No served dishes yet.</p> : (
           <>
-            <Table head={['Dish', 'Served', 'Average', 'Median', 'Colour mix', 'G · Y · O · R']}>
+            <Table head={['Dish', 'Served', 'Usually takes', ...BANDS.map(b => BAND_NAME[b])]}>
               {shownDishes.map(d => (
                 <tr key={d.name}>
                   <td className="py-2 pr-4 font-medium">{d.name}</td>
-                  <td className="pr-4">{d.dishes}</td>
-                  <td className="pr-4 font-semibold text-orange-600">{fmt(d.avg)}</td>
-                  <td className="pr-4">{fmt(d.median)}</td>
-                  <td className="pr-4"><BandBar shares={d.shares} /></td>
-                  <td>{pctCell(d.shares)}</td>
+                  <td className="pr-4 tabular-nums">{d.dishes}</td>
+                  <td className="pr-4 font-semibold">{fmtMin(d.median)}</td>
+                  {qtyCells(d.shares)}
                 </tr>
               ))}
             </Table>
-            {dishTable.length > 12 && (
+            {dishTable.length > 10 && (
               <button onClick={() => setShowAllDishes(v => !v)} className="mt-3 text-sm font-semibold text-orange-600">
                 {showAllDishes ? 'Show fewer' : `Show all ${dishTable.length} dishes`}
               </button>
@@ -390,50 +414,37 @@ export default function ServiceTimingTab({ range, branch }) {
         )}
       </ChartCard>
 
-      <ChartCard title="By category">
-        <Table head={['Category', 'Served', 'Average', 'Median', 'Colour mix', 'G · Y · O · R']}>
+      <ChartCard title="By menu category">
+        <Table head={['Category', 'Served', 'Usually takes', ...BANDS.map(b => BAND_NAME[b])]}>
           {byCategory.map(r => (
             <tr key={r.cat}>
               <td className="py-2 pr-4 font-medium">{r.cat}</td>
-              <td className="pr-4">{r.dishes}</td>
-              <td className="pr-4 font-semibold text-orange-600">{fmt(r.avg)}</td>
-              <td className="pr-4">{fmt(r.median)}</td>
-              <td className="pr-4"><BandBar shares={r.shares} /></td>
-              <td>{pctCell(r.shares)}</td>
+              <td className="pr-4 tabular-nums">{r.dishes}</td>
+              <td className="pr-4 font-semibold">{fmtMin(r.median)}</td>
+              {qtyCells(r.shares)}
             </tr>
           ))}
         </Table>
       </ChartCard>
 
-      {/* =============== CUSTOMER =============== */}
+      {/* =============== CUSTOMERS =============== */}
       <div className="pt-2">
-        <h2 className="text-xl font-bold text-gray-900">Customer timing</h2>
-        <p className="text-sm text-gray-500">
-          How long dine-in customers stay and how long they actually wait. A visit runs from the first item added to the bill being cleared
-          ({dineIn.length} dine-in · {parcelVisits.length} parcel bills).
-        </p>
-        <p className="text-xs text-gray-400 mt-1">
-          Waiting is measured per order round (token): order taken → the last dish of <em>that</em> token served. A dish ordered later in the meal never counts against an earlier round.
-        </p>
+        <h2 className="text-xl font-bold text-gray-900">Dine-in customers</h2>
+        <p className="text-sm text-gray-500">How long people wait for food and how long they stay ({dineIn.length} dine-in bills, {parcelVisits.length} parcel bills).</p>
       </div>
 
       {dineIn.length === 0 ? (
-        <p className="text-sm text-gray-400">No dine-in bills with timing in this period.</p>
+        <p className="text-sm text-gray-400">No dine-in bills with times in this period.</p>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <InsightCard icon={<Users size={22} />} title="Time at table" value={fmt(cust.sit)} subtitle={`average · median ${fmt(cust.sitMedian)}`} color="bg-indigo-500" />
-            <InsightCard icon={<ChefHat size={22} />} title="Wait per order round" value={fmt(cust.waitAll)} subtitle={`order taken → round fully served · median ${fmt(cust.waitAllMedian)}`} color="bg-red-500" />
-            <InsightCard icon={<UtensilsCrossed size={22} />} title="Wait for first dish" value={fmt(cust.waitFirst)} subtitle="order taken → first dish of the round" color="bg-orange-500" />
-            <InsightCard icon={<Clock size={22} />} title="Stay after last dish" value={fmt(cust.afterFood)} subtitle="last served → bill cleared" color="bg-green-500" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <InsightCard icon={<Repeat size={22} />} title="Repeat-order bills" value={`${cust.repeatPct}%`} subtitle="sent 2 or more tokens" color="bg-blue-500" />
-            <InsightCard icon={<UtensilsCrossed size={22} />} title="Dishes per bill" value={cust.dishes.toFixed(1)} subtitle="dine-in average" color="bg-teal-500" />
-            <InsightCard icon={<AlertTriangle size={22} />} title={`Rounds over ${LONG_WAIT_MIN} min`} value={cust.longWaitPct === null ? '—' : `${cust.longWaitPct}%`} subtitle={`of ${cust.doneRounds} fully served rounds`} color="bg-amber-500" />
+            <InsightCard icon={<UtensilsCrossed size={22} />} title="Wait for the first dish" value={fmtMin(cust.waitFirst)} subtitle="after ordering, on average" color="bg-orange-500" />
+            <InsightCard icon={<ChefHat size={22} />} title="Wait for the whole order" value={fmtMin(cust.waitAll)} subtitle="after ordering, on average" color="bg-red-500" />
+            <InsightCard icon={<Clock size={22} />} title="Stay after eating" value={fmtMin(cust.afterFood)} subtitle="last dish served → bill cleared" color="bg-green-500" />
+            <InsightCard icon={<AlertTriangle size={22} />} title={`Orders over ${LONG_WAIT_MIN} min`} value={cust.longWaitPct === null ? '—' : `${cust.longWaitPct}%`} subtitle={`of ${cust.doneRounds} orders customers waited longer than ${LONG_WAIT_MIN} min`} color="bg-amber-500" />
           </div>
 
-          <ChartCard title="How long customers sit" subtitle="Dine-in bills by time at table">
+          <ChartCard title="How long customers stay" subtitle="Number of dine-in bills by time at the table">
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={sitBuckets}>
@@ -447,86 +458,103 @@ export default function ServiceTimingTab({ range, branch }) {
             </div>
           </ChartCard>
 
-          <ChartCard title="Time at table by arrival hour" subtitle="Average minutes, by the hour the order started (IST). Shows when tables turn over slowly.">
-            {sitByHour.length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={sitByHour}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} unit="m" />
-                    <Tooltip formatter={(v, n, p) => [`${v} min (${p.payload.bills} bills)`, 'Avg time at table']} />
-                    <Bar dataKey="minutes" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </ChartCard>
-
-          <ChartCard title="Wait per round by round size" subtitle="Do bigger rounds make customers wait longer? Average minutes from order taken to the whole round served">
-            {waitByRoundSize.length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={waitByRoundSize}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} unit="m" />
-                    <Tooltip formatter={(v, n, p) => [`${v} min (${p.payload.rounds} rounds)`, 'Avg wait']} />
-                    <Bar dataKey="minutes" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </ChartCard>
-
-          <ChartCard title="Time at table by dishes per bill" subtitle="Average minutes customers stay, by how much they ordered in total">
-            {sitByDishes.length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={sitByDishes}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} unit="m" />
-                    <Tooltip formatter={(v, n, p) => [`${v} min (${p.payload.bills} bills)`, 'Avg time at table']} />
-                    <Bar dataKey="minutes" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </ChartCard>
-
-          <ChartCard title="Repeat orders" subtitle="Customers who order again stay longer, by how much?">
-            <Table head={['Tokens on the bill', 'Bills', 'Avg dishes', 'Avg time at table', 'Gap to 2nd order']}>
-              {byRounds.map(r => (
-                <tr key={r.label}><td className="py-2 pr-4 font-medium">{r.label}</td><td className="pr-4">{r.bills}</td><td className="pr-4">{r.dishes.toFixed(1)}</td><td className="pr-4 font-semibold text-indigo-600">{fmt(r.sit)}</td><td>{fmt(r.gap)}</td></tr>
-              ))}
-            </Table>
-          </ChartCard>
-
-          <ChartCard title="Longest stays" subtitle="Worst wait = the longest single order round on that bill (not the whole visit)">
-            <Table head={['Started', 'Table', 'Time at table', 'Rounds', 'Worst wait', 'Avg wait', 'Dishes']}>
+          <ChartCard title="Longest visits" subtitle="“Longest wait” = the slowest single order on that bill">
+            <Table head={['Started', 'Table', 'Time at table', 'Orders sent', 'Longest wait', 'Dishes']}>
               {longestSits.map(v => (
                 <tr key={v.id}>
                   <td className="py-2 pr-4 whitespace-nowrap">{ist12(v.started)}</td>
                   <td className="pr-4 font-medium">T{v.table}</td>
-                  <td className="pr-4 font-semibold text-indigo-600">{fmt(v.sit)}</td>
+                  <td className="pr-4 font-semibold text-indigo-600">{fmtMin(v.sit)}</td>
                   <td className="pr-4">{v.tokens || '—'}</td>
-                  <td className="pr-4 font-semibold text-red-600">{fmt(v.worstWait)}</td>
-                  <td className="pr-4">{fmt(v.avgWait)}</td>
+                  <td className="pr-4 font-semibold text-red-600">{fmtMin(v.worstWait)}</td>
                   <td>{v.dishes}</td>
                 </tr>
               ))}
             </Table>
           </ChartCard>
+
+          {/* deeper analysis, folded away so the page stays simple */}
+          <details className="bg-white rounded-xl border border-gray-200 p-5">
+            <summary className="cursor-pointer font-bold text-gray-900">More details</summary>
+            <div className="mt-4 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <InsightCard icon={<Repeat size={22} />} title="Ordered more than once" value={`${cust.repeatPct}%`} subtitle="bills with 2 or more orders sent" color="bg-blue-500" />
+                <InsightCard icon={<UtensilsCrossed size={22} />} title="Dishes per bill" value={cust.dishes.toFixed(1)} subtitle="dine-in average" color="bg-teal-500" />
+                <InsightCard icon={<Users size={22} />} title="Average time at table" value={fmtMin(cust.sit)} subtitle={`usual: ${fmtMin(cust.sitMedian)}`} color="bg-indigo-500" />
+              </div>
+              <ChartCard title="Time at table by arrival hour" subtitle="Average minutes, by the hour the customer started ordering">
+                {sitByHour.length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={sitByHour}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} unit="m" />
+                        <Tooltip formatter={(v, n, p) => [`${v} min (${p.payload.bills} bills)`, 'Average time at table']} />
+                        <Bar dataKey="minutes" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </ChartCard>
+              <ChartCard title="Do bigger orders take longer?" subtitle="Average wait for the whole order, by how many dishes were in it">
+                {waitByRoundSize.length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={waitByRoundSize}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} unit="m" />
+                        <Tooltip formatter={(v, n, p) => [`${v} min (${p.payload.rounds} orders)`, 'Average wait']} />
+                        <Bar dataKey="minutes" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </ChartCard>
+              <ChartCard title="Do people who order more stay longer?" subtitle="Average time at the table, by dishes on the bill">
+                {sitByDishes.length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={sitByDishes}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} unit="m" />
+                        <Tooltip formatter={(v, n, p) => [`${v} min (${p.payload.bills} bills)`, 'Average time at table']} />
+                        <Bar dataKey="minutes" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </ChartCard>
+              <ChartCard title="Ordering again" subtitle="Bills grouped by how many orders were sent to the kitchen">
+                <Table head={['Orders sent', 'Bills', 'Dishes per bill', 'Time at table', 'Time until 2nd order']}>
+                  {byRounds.map(r => (
+                    <tr key={r.label}><td className="py-2 pr-4 font-medium">{r.label}</td><td className="pr-4">{r.bills}</td><td className="pr-4">{r.dishes.toFixed(1)}</td><td className="pr-4 font-semibold text-indigo-600">{fmtMin(r.sit)}</td><td>{fmtMin(r.gap)}</td></tr>
+                  ))}
+                </Table>
+              </ChartCard>
+            </div>
+          </details>
         </>
       )}
 
       {parcelVisits.length > 0 && (
-        <ChartCard title="Parcel orders" subtitle="Order start → bill cleared (hand-over)">
-          <p className="text-2xl font-bold text-gray-900">{fmt(avg(parcelVisits.map(v => v.sit)))}</p>
-          <p className="text-xs text-gray-500">average over {parcelVisits.length} parcel bills · median {fmt(median(parcelVisits.map(v => v.sit)))}</p>
+        <ChartCard title="Parcel orders" subtitle="From the first item added until the bill was cleared (handed over). Ready-time estimates are in the Parcel Analysis tab.">
+          <p className="text-2xl font-bold text-gray-900">{fmtMin(median(parcelVisits.map(v => v.sit)))}</p>
+          <p className="text-xs text-gray-500">usual time over {parcelVisits.length} parcel bills · average {fmtMin(avg(parcelVisits.map(v => v.sit)))}</p>
         </ChartCard>
       )}
+
+      <details className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-sm text-gray-600">
+        <summary className="cursor-pointer font-semibold text-gray-700 flex items-center gap-2"><HelpCircle size={16} /> How are these numbers worked out?</summary>
+        <ul className="mt-2 space-y-1 list-disc pl-5">
+          <li>Every dish is timed from “Send Token” to the moment someone taps Serve for it.</li>
+          <li>The colours use the waiting-time limits set for each kitchen in Kitchen settings → Kitchen screen layout.</li>
+          <li>“Usually” means the middle value, so one forgotten Serve tap does not spoil the number.</li>
+          <li>Portions count separately: 3 plates of rice count as 3 dishes. Times over 4 hours are ignored (a forgotten tap).</li>
+        </ul>
+      </details>
     </div>
   );
 }

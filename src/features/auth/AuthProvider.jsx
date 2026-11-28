@@ -7,7 +7,7 @@ import {
     signIn as signInRequest,
     signOut as signOutRequest,
 } from '../../services/authService';
-import { hasPermission, ROLES } from './permissions';
+import { allowedBranches, hasAllBranches, hasPermission, ROLES } from './permissions';
 
 /* Who is logged in, and what they may do.
 
@@ -131,6 +131,8 @@ export function AuthProvider({ children }) {
             isAdmin: !!account && account.is_active && account.role === ROLES.ADMIN,
             can,
             canAny: (keys) => keys.some(can),
+            branches: allowedBranches(account),      // branch ids this account may work in
+            allBranches: hasAllBranches(account),
             signIn,
             signOut,
             refreshAccount,

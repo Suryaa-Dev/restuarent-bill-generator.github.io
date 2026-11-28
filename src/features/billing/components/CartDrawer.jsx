@@ -8,6 +8,7 @@ import { useLongPress } from '../../../shared/hooks/useLongPress';
 import { mergeLines, pickPlusIndex, pickMinusIndex } from '../utils/customize';
 import { computeSentQty } from '../../kitchens/utils/kitchenLogic';
 import TokensPanel from './tokens/TokensPanel';
+import EtaChip from './EtaChip';
 import ServiceTimeModal from './tokens/ServiceTimeModal';
 import { renderBillRows, SentNotice } from './BillRows';
 
@@ -60,6 +61,7 @@ const CartDrawer = ({ selectedTable, currentBill, total, onChangeQuantity, onPri
                                 <Info size={18} />
                             </button>
                         )}
+                        {kitchen && <EtaChip eta={kitchen.eta} lang={lang} />}
                     </div>
                     <button onClick={onClose} className="p-1 -mr-1 shrink-0" aria-label={t('close', lang)}>
                         <X size={24} />

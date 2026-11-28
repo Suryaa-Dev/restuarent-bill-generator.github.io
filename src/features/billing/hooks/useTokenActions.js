@@ -12,7 +12,7 @@ export function useTokenActions(ctx) {
         branch, lang, kitchenLookup,
         bills: { billsRef, parcelsRef, setParcelsBoth, enqueueSave, applyBillDelta },
         kitchen: { tokensRef, tokensOfTable, upsertToken, tokenQueueRef, archiveChainRef },
-        allow,
+        allow, estimateParcel, onParcelSent,
     } = ctx;
 
     const [sendingToken, setSendingToken] = useState(false);
@@ -34,16 +34,22 @@ export function useTokenActions(ctx) {
 
             // new dine-in items and new parcel items are fired as SEPARATE tokens
             let existing = tableTokens;
+            let parcelSent = null;
             for (const parcelGroup of [false, true]) {
                 const group = items
                     .filter(i => !!i.isParcel === parcelGroup)
                     .map(({ isParcel, ...rest }) => rest); // eslint-disable-line no-unused-vars
                 if (group.length === 0) continue;
-                const created = await createToken({ branch, table, items: group, isParcel: parcelGroup, existing });
+                // parcel: estimate the ready time now (from the kitchen queue as it is) and keep it on the token
+                const eta = parcelGroup && estimateParcel ? estimateParcel(group, tokensRef.current) : null;
+                const created = await createToken({ branch, table, items: group, isParcel: parcelGroup, existing, eta });
+                if (parcelGroup && eta) parcelSent = { token: created, eta };
                 tokenEcho.remember(created.id, Date.parse(created.updatedAt)); // ignore its own INSERT echo
                 upsertToken(created);
                 existing = [...existing, created];
             }
+
+            if (parcelSent && onParcelSent) onParcelSent(parcelSent.token, parcelSent.eta);
 
             // Table + parcel mix: the Parcel button was only for this batch, so switch it off.
             // A fully-parcel order (no dine-in lines) keeps it on for the next items.

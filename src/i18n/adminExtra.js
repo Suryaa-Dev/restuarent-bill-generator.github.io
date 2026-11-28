@@ -76,6 +76,12 @@ const STR = {
         accountActive: 'Account is on',
         accountActiveDesc: 'Switch off to block this login immediately, without deleting it.',
         deleteUser: 'Delete user',
+        secBranches: 'Branches',
+        branchAll: 'All branches',
+        branchSome: 'Only selected',
+        branchHint: 'The person can log in and work only in these branches. Owners / admins always have every branch.',
+        branchPickOne: 'Choose at least one branch.',
+        noBranchAssigned: 'Your account has no branch yet. Ask the owner to give you a branch.',
         deleteUserConfirm: 'Delete {name}? This login is removed for good. Bills they made are kept.',
 
         'preset.waiter': 'Waiter',
@@ -124,8 +130,6 @@ const STR = {
         'perm.tokens.edit.desc': 'Change a sent order, or reduce dishes the customer sent back',
         'perm.kds.serve': 'Mark served from the kitchen',
         'perm.kds.serve.desc': 'Cooks can tick dishes as served on the kitchen screen',
-        'perm.kds.batches': 'Cook in batches',
-        'perm.kds.batches.desc': 'Start and finish batches on the Batches tab',
         'perm.history.deleteBills': 'Delete bills',
         'perm.history.deleteBills.desc': 'Remove bills from history and every report',
         'perm.settings.branch': 'Switch branch',
@@ -152,6 +156,10 @@ const STR = {
         'err.user_not_found': 'This user no longer exists. Refresh the list.',
         'err.network': 'Could not reach the server. Check the internet connection.',
         'err.unknown': 'Something went wrong. Please try again.',
+
+        // ---- parcel estimated time ----
+        etaTooltip: 'Parcel estimated ready time',
+        etaSentToast: 'Parcel #{token} will be ready in about {min} min (around {time}).',
 
         // ---- UPI QR ----
         showQr: 'Show QR',
@@ -288,6 +296,12 @@ const STR = {
         accountActive: 'खाते सुरू आहे',
         accountActiveDesc: 'हे लॉगिन न हटवता लगेच थांबवण्यासाठी बंद करा.',
         deleteUser: 'युजर हटवा',
+        secBranches: 'शाखा',
+        branchAll: 'सर्व शाखा',
+        branchSome: 'फक्त निवडलेल्या',
+        branchHint: 'ही व्यक्ती फक्त या शाखांमध्ये लॉग इन करून काम करू शकते. मालक / अ‍ॅडमिनला नेहमी सर्व शाखा असतात.',
+        branchPickOne: 'किमान एक शाखा निवडा.',
+        noBranchAssigned: 'तुमच्या खात्याला अजून शाखा दिलेली नाही. मालकाला शाखा द्यायला सांगा.',
         deleteUserConfirm: '{name} हटवायचे? हे लॉगिन कायमचे काढले जाईल. त्यांनी केलेली बिले राहतील.',
 
         'preset.waiter': 'वेटर',
@@ -336,8 +350,6 @@ const STR = {
         'perm.tokens.edit.desc': 'पाठवलेली ऑर्डर बदला, किंवा ग्राहकाने परत केलेले पदार्थ कमी करा',
         'perm.kds.serve': 'किचनमधून सर्व्ह नोंदवा',
         'perm.kds.serve.desc': 'आचारी किचन स्क्रीनवर पदार्थ सर्व्ह म्हणून नोंदवू शकतात',
-        'perm.kds.batches': 'बॅचमध्ये बनवा',
-        'perm.kds.batches.desc': 'बॅचेस टॅबवर बॅच सुरू आणि पूर्ण करा',
         'perm.history.deleteBills': 'बिले हटवा',
         'perm.history.deleteBills.desc': 'हिस्टरी आणि सर्व रिपोर्टमधून बिले काढा',
         'perm.settings.branch': 'शाखा बदला',
@@ -365,6 +377,8 @@ const STR = {
         'err.network': 'सर्व्हरशी संपर्क झाला नाही. इंटरनेट तपासा.',
         'err.unknown': 'काहीतरी चुकले. पुन्हा प्रयत्न करा.',
 
+        etaTooltip: 'पार्सल तयार होण्याची अंदाजे वेळ',
+        etaSentToast: 'पार्सल #{token} सुमारे {min} मिनिटांत तयार होईल ({time} च्या आसपास).',
         showQr: 'QR दाखवा',
         qrTitle: 'स्कॅन करून पैसे भरा',
         qrAmount: 'भरायची रक्कम',

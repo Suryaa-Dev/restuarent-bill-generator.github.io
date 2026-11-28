@@ -1,11 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChefHat, Flame, Play } from 'lucide-react';
+import React from 'react';
+import { ChefHat } from 'lucide-react';
 import { translateCategory, translateItemName, translatePortion } from '../../../i18n/translations';
 import { tb } from '../../../i18n/batchExtra';
-import { ageColor, BORDER, TEXT } from '../utils/kds';
-import { canUndoStart, recommendedView } from '../utils/batches';
+import { ageColor, BORDER, DOT, TEXT } from '../utils/kds';
 
-const fmtTime = (iso, lang) => new Date(iso).toLocaleTimeString(lang === 'mr' ? 'mr-IN' : 'en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 const minutesBetween = (from, to) => Math.max(1, Math.round((to - from) / 60000));
 const unitLabel = (u, lang) => `T${u.tableNumber}${u.isParcel ? ` · ${tb('parcel', lang)}` : ''}`;
 
@@ -41,16 +39,19 @@ function QtyByPortion({ portions, qty, lang }) {
     );
 }
 
-// who the plates are for: T3 ×3 · T2 ×2 · T5 · Parcel ×1   (a tick = already served)
-function Units({ units, lang }) {
+// who the plates are for: T3 ×3 · T2 ×2 · T5 · Parcel ×1 — each coloured by how long THAT order has waited
+function Units({ units, now, timer, lang }) {
     return (
         <div className="flex flex-wrap gap-1.5 mt-2.5">
-            {units.map(u => (
-                <span key={u.id} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-sm font-semibold tabular-nums ${u.isParcel ? 'bg-purple-50 border-purple-200 text-purple-800' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
-                    {unitLabel(u, lang)} <span className="text-gray-500 font-bold">×{u.qty}</span>
-                    {u.served && <Check size={14} className="text-green-600" aria-label={tb('servedMark', lang)} />}
-                </span>
-            ))}
+            {units.map(u => {
+                const c = ageColor(u.since, now, timer);
+                return (
+                    <span key={u.id} className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-sm font-semibold tabular-nums ${u.isParcel ? 'bg-purple-50 border-purple-200 text-purple-800' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${DOT[c]}`} />
+                        {unitLabel(u, lang)} <span className="text-gray-500 font-bold">×{u.qty}</span>
+                    </span>
+                );
+            })}
         </div>
     );
 }
@@ -68,159 +69,72 @@ function Header({ badge, badgeTone, name, category, qty, lang, portions }) {
     );
 }
 
-/* ---------- unstarted recommendation ---------- */
-function RecommendationCard({ rec, now, timer, busy, lang, onStart }) {
+const URGENCY_LABEL = { green: 'urgGreen', yellow: 'urgYellow', orange: 'urgOrange', red: 'urgRed', none: 'urgGreen' };
+const BADGE = {
+    none: 'bg-gray-200 text-gray-700', green: 'bg-green-500 text-white', yellow: 'bg-amber-400 text-gray-900',
+    orange: 'bg-orange-500 text-white', red: 'bg-red-600 text-white',
+};
+
+/* one recommended dish: rank, what to cook, for whom, how urgent */
+function RecommendationCard({ rec, now, timer, lang }) {
     const color = ageColor(rec.oldestSince, now, timer);
     const mins = minutesBetween(rec.oldestSince, now);
     return (
         <div className={`bg-white rounded-2xl border-2 p-3.5 flex flex-col ${BORDER[color]}`}>
-            <Header badge={`#${rec.rank}`} badgeTone="bg-orange-100 text-orange-700" name={rec.name} category={rec.category} qty={rec.qty} portions={rec.portions} lang={lang} />
-            <Units units={rec.units} lang={lang} />
-            <p className="mt-2.5 text-xs text-gray-500">
-                {rec.coverage} {tb(rec.coverage === 1 ? 'tableWaiting' : 'tablesWaiting', lang)}
-                <span className="mx-1.5">·</span>
+            <Header badge={`${rec.rank}`} badgeTone={BADGE[color]} name={rec.name} category={rec.category} qty={rec.qty} portions={rec.portions} lang={lang} />
+            <Units units={rec.units} now={now} timer={timer} lang={lang} />
+            <p className="mt-2.5 text-xs text-gray-500 flex flex-wrap items-center gap-x-1.5">
+                <span className={`inline-flex items-center gap-1 font-bold ${TEXT[color]}`}>
+                    <span className={`w-2 h-2 rounded-full ${DOT[color]}`} /> {tb(URGENCY_LABEL[color], lang)}
+                </span>
+                <span>·</span>
+                <span>{rec.coverage} {tb(rec.coverage === 1 ? 'tableWaiting' : 'tablesWaiting', lang)}</span>
+                <span>·</span>
                 <span className={`font-semibold ${TEXT[color]}`}>{tb('waitingMin', lang, { n: mins })}</span>
             </p>
-            {onStart && (
-            <button
-                onClick={() => onStart(rec)}
-                disabled={busy}
-                className="mt-3 h-12 rounded-xl bg-orange-500 text-white text-base font-bold flex items-center justify-center gap-2 active:bg-orange-600 disabled:opacity-50"
-            >
-                <Play size={18} /> {tb('startBatch', lang)}
-            </button>
-            )}
         </div>
     );
 }
 
-/* ---------- started batch (in progress) ---------- */
-function InProgressCard({ batch, now, busy, lang, onDone, onUndo }) {
-    const mins = minutesBetween(Date.parse(batch.startedAt), now);
-    const undoable = canUndoStart(batch);
-    return (
-        <div className="bg-white rounded-2xl border-2 border-green-500 p-3.5 flex flex-col">
-            <Header badge={`#${batch.batchNo}`} badgeTone="bg-green-100 text-green-700" name={batch.name} category={batch.category} qty={batch.qty} portions={batch.portions} lang={lang} />
-            <Units units={batch.units} lang={lang} />
-            <p className="mt-2.5 text-xs text-gray-500 flex flex-wrap gap-x-2">
-                <span className="font-semibold text-green-700">{tb('cookingMin', lang, { n: mins })}</span>
-                {batch.cancelledQty > 0 && <span className="text-red-600 font-semibold">{tb('cancelledNote', lang, { n: batch.cancelledQty })}</span>}
-            </p>
-            {onDone && (
-            <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                    onClick={() => onUndo(batch)}
-                    disabled={busy || !undoable}
-                    className="h-12 rounded-xl border-2 border-green-600 bg-green-50 text-green-800 text-[15px] font-bold flex items-center justify-center gap-1.5 active:bg-green-100 disabled:opacity-60"
-                >
-                    <Flame size={17} /> {tb('inProgress', lang)}
-                </button>
-                <button
-                    onClick={() => onDone(batch)}
-                    disabled={busy}
-                    className="h-12 rounded-xl bg-green-600 text-white text-base font-bold flex items-center justify-center gap-2 active:bg-green-700 disabled:opacity-50"
-                >
-                    <Check size={19} /> {tb('done', lang)}
-                </button>
-            </div>
-            )}
-        </div>
-    );
-}
-
-/* ---------- completed batch ---------- */
-function DoneCard({ batch, lang }) {
-    const took = batch.doneAt ? minutesBetween(Date.parse(batch.startedAt), Date.parse(batch.doneAt)) : null;
-    return (
-        <div className="bg-white rounded-2xl border border-gray-200 p-3.5 opacity-90">
-            <Header badge={`#${batch.batchNo}`} badgeTone="bg-gray-100 text-gray-600" name={batch.name} category={batch.category} qty={batch.qty} portions={batch.portions} lang={lang} />
-            <Units units={batch.units} lang={lang} />
-            <p className="mt-2.5 text-xs text-gray-500 flex flex-wrap gap-x-2">
-                <span className="font-semibold text-gray-700 inline-flex items-center gap-1"><Check size={13} className="text-green-600" />{batch.doneAt ? tb('doneAt', lang, { t: fmtTime(batch.doneAt, lang) }) : tb('done', lang)}</span>
-                {took != null && <span>{tb('cookedIn', lang, { n: took })}</span>}
-                {batch.cancelledQty > 0 && <span className="text-red-600 font-semibold">{tb('cancelledNote', lang, { n: batch.cancelledQty })}</span>}
-                {batch.wastedQty > 0 && <span className="text-red-600 font-semibold">{tb('wastedNote', lang, { n: batch.wastedQty })}</span>}
-            </p>
-        </div>
-    );
-}
-
-/* ---------- the tab ---------- */
-// readOnly: the account may watch batches but not start / finish them
-export default function BatchesTab({ batches, timer, lang, readOnly = false }) {
-    const { inProgress, done, recs, error, busyId, notice, clearNotice, start, finish, undo, now } = batches;
-    const [sub, setSub] = useState('recommended'); // recommended | progress | done
-
-    useEffect(() => {
-        if (!notice) return undefined;
-        const id = setTimeout(clearNotice, 7000);
-        return () => clearTimeout(id);
-    }, [notice]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const view = useMemo(() => recommendedView(inProgress, recs), [inProgress, recs]);
-
-    const subs = [
-        ['recommended', 'subRecommended', view.length],
-        ['progress', 'subProgress', inProgress.length],
-        ['done', 'subDone', done.length],
+// colour key: what each urgency colour means for this kitchen's timer
+function Legend({ timer, lang }) {
+    const items = [
+        ['green', tb('legendUpTo', lang, { n: timer.green })],
+        ['yellow', tb('legendUpTo', lang, { n: timer.yellow })],
+        ['orange', tb('legendUpTo', lang, { n: timer.orange })],
+        ['red', tb('legendOver', lang, { n: timer.orange })],
     ];
+    return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+            {items.map(([c, label]) => (
+                <span key={c} className="inline-flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-full ${DOT[c]}`} /> {label}</span>
+            ))}
+        </div>
+    );
+}
 
-    const confirmUndo = (b) => { if (window.confirm(tb('undoConfirm', lang))) undo(b); };
-    const onStart = readOnly ? undefined : start;
-    const onDone = readOnly ? undefined : finish;
-    const onUndo = readOnly ? undefined : confirmUndo;
-
-    let cards;
-    let empty;
-    if (sub === 'recommended') {
-        empty = tb('emptyRecommended', lang);
-        cards = view.map(v => v.kind === 'batch'
-            ? <InProgressCard key={v.id} batch={v.batch} now={now} busy={busyId === v.batch.id} lang={lang} onDone={onDone} onUndo={onUndo} />
-            : <RecommendationCard key={v.id} rec={v.rec} now={now} timer={timer} busy={busyId === v.id} lang={lang} onStart={onStart} />);
-    } else if (sub === 'progress') {
-        empty = tb('emptyProgress', lang);
-        cards = inProgress.map(b => <InProgressCard key={b.id} batch={b} now={now} busy={busyId === b.id} lang={lang} onDone={onDone} onUndo={onUndo} />);
-    } else {
-        empty = tb('emptyDone', lang);
-        cards = done.map(b => <DoneCard key={b.id} batch={b} lang={lang} />);
-    }
-
+/* Batches tab = cooking order. Cook from the top; quantities per table are on the All tab.
+   No buttons: nothing here changes an order. */
+export default function BatchesTab({ batches, timer, lang }) {
+    const { recs, now } = batches;
     return (
         <div className="h-full flex flex-col">
-            {/* the three categories */}
-            <div className="shrink-0 px-3 md:px-4 pt-3 pb-2 flex justify-center">
-                <div className="inline-flex gap-1 p-1 rounded-full bg-white border border-gray-200">
-                    {subs.map(([id, key, n]) => {
-                        const active = sub === id;
-                        return (
-                            <button
-                                key={id}
-                                onClick={() => setSub(id)}
-                                className={`h-9 px-4 rounded-full text-sm font-semibold flex items-center gap-2 transition-colors ${active ? 'bg-gray-900 text-white' : 'text-gray-700 active:bg-gray-100'}`}
-                            >
-                                {tb(key, lang)}
-                                <span className={`text-xs font-bold tabular-nums rounded-full px-1.5 py-0.5 leading-none ${active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-600'}`}>{n}</span>
-                            </button>
-                        );
-                    })}
-                </div>
+            <div className="shrink-0 px-3 md:px-4 pt-3 pb-2 space-y-1.5">
+                <p className="text-sm font-bold text-gray-800">{tb('cookOrderTitle', lang)}</p>
+                <p className="text-xs text-gray-500">{tb('cookOrderNote', lang)}</p>
+                <Legend timer={timer} lang={lang} />
             </div>
 
-            {error && <p className="mx-3 md:mx-4 mb-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">{tb('setupNeeded', lang)}</p>}
-            {notice && (
-                <button onClick={clearNotice} className="mx-3 md:mx-4 mb-2 text-left text-sm font-semibold text-blue-900 bg-blue-50 border border-blue-200 rounded-xl p-2.5">
-                    {tb(notice.key, lang, notice.vars)}
-                </button>
-            )}
-
             <div className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 pb-6">
-                {cards.length === 0 ? (
+                {recs.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-400 py-16">
                         <ChefHat size={44} className="mb-3 opacity-50" />
-                        <p>{empty}</p>
+                        <p>{tb('emptyRecommended', lang)}</p>
                     </div>
                 ) : (
-                    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 items-start">{cards}</div>
+                    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 items-start">
+                        {recs.map(rec => <RecommendationCard key={rec.key} rec={rec} now={now} timer={timer} lang={lang} />)}
+                    </div>
                 )}
             </div>
         </div>

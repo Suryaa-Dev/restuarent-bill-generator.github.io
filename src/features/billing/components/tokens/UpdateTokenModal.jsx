@@ -5,6 +5,9 @@ import { ts } from '../../../../i18n/serveExtra';
 import { CategoryPills, MenuItem, flattenRatePickerItems } from '../../../menu/components/MenuCards';
 import { lineKey } from '../../../kitchens/utils/kitchenLogic';
 import { getCategories } from '../../../menu/utils/menuUtils';
+import { modsSig, sortModNames } from '../../../menu/utils/modifiers';
+import { useLongPress } from '../../../../shared/hooks/useLongPress';
+import CustomizeModal from '../CustomizeModal';
 
 let uidCounter = 0;
 const nextUid = () => ++uidCounter;
@@ -28,7 +31,57 @@ const makeNewRow = (opt, qty, replacedFrom) => ({
 });
 
 // drop editor-only fields before saving
-const strip = ({ uid, origQty, wasRemoved, isNew, ...rest }) => rest;
+const strip = ({ uid, origQty, origMods, wasRemoved, isNew, fromCustom, ...rest }) => rest;
+
+// dish identity without the cooking instructions: all plates of one dish + portion on this token
+const dishKey = (r) => `${r.name}||${r.portion}||${r.category || ''}`;
+
+/* New cooking instructions for the unserved plates of one dish. Existing lines are re-used where
+   possible (same instructions -> same line), so the kitchen sees as few "changes" as possible:
+     1. every line keeps as many plates as still have its instructions
+     2. lines left empty take over a remaining instruction set (in-place change)
+     3. anything still left becomes a new line; lines still empty are removed               */
+function applyCustomization(rows, key, units, modifiers) {
+    const editable = rows.filter(r => !r.removed && !r.served && dishKey(r) === key);
+    if (!editable.length) return rows;
+    const sample = editable[0];
+    const buckets = new Map();
+    units.forEach(u => {
+        const sig = modsSig(u.mods);
+        if (!buckets.has(sig)) buckets.set(sig, { mods: sortModNames(u.mods, modifiers), n: 0 });
+        buckets.get(sig).n += 1;
+    });
+    const next = new Map(editable.map(r => [r.uid, { ...r }]));
+    next.forEach(r => {
+        const b = buckets.get(modsSig(r.mods));
+        const keep = Math.min(r.qty, b ? b.n : 0);
+        if (b) b.n -= keep;
+        r.qty = keep;
+    });
+    next.forEach(r => {
+        if (r.qty > 0) return;
+        const b = [...buckets.values()].find(x => x.n > 0);
+        if (!b) return;
+        r.qty = b.n;
+        r.mods = b.mods.length ? b.mods : undefined;
+        b.n = 0;
+    });
+    const extra = [...buckets.values()].filter(b => b.n > 0).map(b => ({
+        ...makeNewRow({ name: sample.name, portion: sample.portion, category: sample.category, price: sample.price, kitchenId: sample.kitchenId }, b.n),
+        ...(b.mods.length ? { mods: b.mods } : {}),
+        fromCustom: true,
+    }));
+    const out = [];
+    rows.forEach(r => {
+        const n = next.get(r.uid);
+        if (!n) { out.push(r); return; }
+        if (n.qty > 0) out.push(n);
+        else if (!r.isNew) out.push({ ...r, removed: true }); // saved with its original quantity as "removed"
+    });
+    const lastIdx = out.reduce((at, r, i) => (dishKey(r) === key ? i : at), out.length - 1);
+    out.splice(lastIdx + 1, 0, ...extra);
+    return out;
+}
 
 /* ---------- menu picker (Add more) ----------
    Same look as the home screen: category pills (first = favourites) and the same item cards.
@@ -118,10 +171,14 @@ function MenuPicker({ items, favoriteItems, rows, addedCount, lang, onAdd, onClo
 
 /* ---------- editor (styled like the cart drawer: Add More, + / -, item names) ---------- */
 
-export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang, onSave, onClose }) {
+// modifiers + canCustomize: long-press an unserved dish to change its cooking instructions
+export default function UpdateTokenModal({ token, menuItems, favoriteItems, modifiers = [], canCustomize = false, lang, onSave, onClose }) {
     const [rows, setRows] = useState(() =>
-        token.items.map(it => ({ ...it, uid: nextUid(), origQty: it.qty, wasRemoved: !!it.removed, isNew: false }))
+        token.items.map(it => ({ ...it, uid: nextUid(), origQty: it.qty, origMods: it.mods || [], wasRemoved: !!it.removed, isNew: false }))
     );
+    const press = useLongPress();
+    const [customizeKey, setCustomizeKey] = useState(null); // dish being customised (dishKey)
+    const modsChanged = (r) => modsSig(r.mods) !== modsSig(r.origMods);
     const [picking, setPicking] = useState(false);
     const [parcel, setParcel] = useState(!!token.isParcel); // Parcel button: flips the WHOLE token
     const [saving, setSaving] = useState(false);
@@ -144,7 +201,24 @@ export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang
     // food already served at the table can't become a parcel, so the button locks then
     const parcelLocked = rows.some(r => r.served && !r.removed);
     const parcelChanged = parcel !== !!token.isParcel;
-    const dirty = parcelChanged || rows.some(r => r.isNew || (r.removed && !r.wasRemoved) || (!r.removed && r.qty !== r.origQty));
+    const dirty = parcelChanged || rows.some(r => r.isNew || (r.removed && !r.wasRemoved) || (!r.removed && (r.qty !== r.origQty || modsChanged(r))));
+
+    // the plates of the long-pressed dish: served ones are locked, the rest can change
+    const customizing = (() => {
+        if (!customizeKey) return null;
+        const group = rows.filter(r => !r.removed && dishKey(r) === customizeKey);
+        if (!group.length) return null;
+        const locked = [];
+        const editable = [];
+        let id = 0;
+        group.forEach(r => {
+            for (let i = 0; i < r.qty; i++) {
+                if (r.served) locked.push({ mods: r.mods || [] });
+                else editable.push({ id: id++, mods: [...(r.mods || [])] });
+            }
+        });
+        return { line: group[0], locked, editable };
+    })();
     const canSave = dirty && activeRows.length > 0 && !saving;
 
     const handleSave = async () => {
@@ -152,7 +226,11 @@ export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang
 
         const items = rows.map(r => {
             if (r.removed && !r.wasRemoved) return { ...strip(r), qty: r.origQty, removed: true, change: 'removed' };
-            if (r.isNew) return { ...strip(r), change: r.replacedFrom ? 'replaced' : 'added' };
+            if (r.isNew) return { ...strip(r), change: r.fromCustom ? 'custom' : r.replacedFrom ? 'replaced' : 'added' };
+            if (!r.removed && modsChanged(r)) {
+                const { mods, ...rest } = strip(r);
+                return { ...rest, ...(mods && mods.length ? { mods } : {}), change: 'custom', prevMods: r.origMods, ...(r.qty !== r.origQty ? { prevQty: r.origQty } : {}) };
+            }
             if (!r.removed && r.qty !== r.origQty) return { ...strip(r), change: 'qty', prevQty: r.origQty };
             return strip(r);
         });
@@ -235,11 +313,17 @@ export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang
                         </button>
                     </div>
 
-                    {/* items: name, - qty + */}
+                    {/* items: name, - qty +   (long-press a dish: cooking instructions) */}
                     <div className="flex-1 overflow-y-auto p-4">
+                        {canCustomize && modifiers.length > 0 && (
+                            <p className="text-xs text-gray-500 mb-1">{ts('custLongPressHint', lang)}</p>
+                        )}
                         {visibleRows.map((r, idx) => (
                             <div key={r.uid} className="flex justify-between items-center py-3 border-b gap-2">
-                                <div className="min-w-0">
+                                <div
+                                    className={`min-w-0 flex-1 ${canCustomize && !r.served && !r.removed ? 'select-none [-webkit-touch-callout:none]' : ''}`}
+                                    {...(canCustomize && modifiers.length > 0 && !r.served && !r.removed ? press(() => setCustomizeKey(dishKey(r))) : {})}
+                                >
                                     <p className={`font-medium ${r.removed ? 'line-through text-gray-400' : ''}`}>
                                         <span className="text-gray-400 font-normal mr-1">{idx + 1}.</span>
                                         {translateItemName(r.name, lang)}
@@ -302,6 +386,20 @@ export default function UpdateTokenModal({ token, menuItems, favoriteItems, lang
                     </div>
                 </div>
             </div>
+
+            {customizing && (
+                <CustomizeModal
+                    key={customizeKey}
+                    line={customizing.line}
+                    locked={customizing.locked}
+                    initialUnits={customizing.editable}
+                    modifiers={modifiers}
+                    lockedKind="served"
+                    lang={lang}
+                    onSave={(units) => { setRows(rs => applyCustomization(rs, customizeKey, units, modifiers)); setCustomizeKey(null); }}
+                    onClose={() => setCustomizeKey(null)}
+                />
+            )}
 
             {picking && (
                 <MenuPicker

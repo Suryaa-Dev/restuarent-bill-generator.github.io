@@ -4,10 +4,11 @@ import { Package, IndianRupee, Percent, ShoppingBag } from 'lucide-react';
 import { summarize, pctChange, rangeLabel, inr, num, billTotal } from '../utils/analytics';
 import { formatHour, formatDateKey, eachDateKey, WEEKDAYS_MON_FIRST } from '../../../shared/utils/time';
 import { ChartCard, StatCard, LoadingBlock, compactMoney } from './shared';
+import ParcelEtaSection from './ParcelEtaSection';
 
 const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(0)}%` : '0%');
 
-export default function ParcelTab({ bills, prevBills, range, dateRange, loading }) {
+export default function ParcelTab({ bills, prevBills, range, dateRange, loading, branch }) {
   const [metric, setMetric] = useState('orders');
 
   const parcel = useMemo(() => bills.filter(b => b.is_parcel), [bills]);
@@ -203,6 +204,7 @@ export default function ParcelTab({ bills, prevBills, range, dateRange, loading 
           )}
         </div>
       </div>
+      <ParcelEtaSection range={range} branch={branch} />
     </div>
   );
 }

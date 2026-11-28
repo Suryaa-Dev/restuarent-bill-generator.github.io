@@ -3,6 +3,7 @@ import { CustomInlineBadge } from './CustomBadge';
 import { Check, ShoppingBag } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../../i18n/translations';
 import { tx } from '../../../i18n/kdsExtra';
+import { ts } from '../../../i18n/serveExtra';
 import { BORDER, ageColor } from '../utils/kds';
 import { AgeText } from './KdsBox';
 
@@ -14,6 +15,7 @@ const fmtTime = (iso) => new Date(iso).toLocaleTimeString('en-IN', {
 const changeNote = (it, lang) => {
     if (it.change === 'renewed') return tx('itemRenewed', lang);
     if (it.change === 'replaced') return `${t('itemReplaced', lang)}${it.replacedFrom ? ` · ${t('replacedFrom', lang)} ${it.replacedFrom}` : ''}`;
+    if (it.change === 'custom') return ts('itemCustomChanged', lang);
     if (it.change === 'added') return t('itemNew', lang);
     if (it.change === 'qty' && it.prevQty != null) return `${t('itemQtyChanged', lang)} ${it.prevQty}→${it.qty}`;
     return null;

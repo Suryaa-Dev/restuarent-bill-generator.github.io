@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Pencil, Ban, ShoppingBag, ChefHat } from 'lucide-react';
 import { t, translateItemName, translatePortion } from '../../../../i18n/translations';
+import { ts } from '../../../../i18n/serveExtra';
 import { tx } from '../../../../i18n/kdsExtra';
 import EditServedModal from './EditServedModal';
 
@@ -79,6 +80,8 @@ function TokenCard({ token, lang, onToggleServed, onCancel, onUpdate, onEditServ
                             ? `${tx('itemRenewed', lang)}${it.renewCount > 1 ? ` ×${it.renewCount}` : ''}`
                             : it.change === 'replaced'
                             ? `${t('itemReplaced', lang)}${it.replacedFrom ? ` · ${t('replacedFrom', lang)} ${it.replacedFrom}` : ''}`
+                            : it.change === 'custom'
+                                ? ts('itemCustomChanged', lang)
                             : it.change === 'added'
                                 ? t('itemNew', lang)
                                 : it.change === 'qty' && it.prevQty != null

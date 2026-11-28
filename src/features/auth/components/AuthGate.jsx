@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { t } from '../../../i18n/translations';
 import { ta } from '../../../i18n/adminExtra';
-import { getSavedBranch, getSavedLanguage, saveBranch, saveLanguage } from '../../../shared/utils/devicePrefs';
+import { clearSavedBranch, getSavedBranch, getSavedLanguage, saveBranch, saveLanguage } from '../../../shared/utils/devicePrefs';
 import BranchSelectModal from '../../settings/components/BranchSelectModal';
 import { useAuth } from '../AuthProvider';
 import LoginPage from './LoginPage';
@@ -12,9 +12,11 @@ import OwnerSetupPage from './OwnerSetupPage';
    Then, on a device that has never chosen a branch, the branch is picked first
    (every screen — billing, KDS, reports — works per branch). */
 export default function AuthGate({ children }) {
-    const { status, retry, signOut } = useAuth();
+    const { status, retry, signOut, branches } = useAuth();
     const [lang, setLang] = useState(getSavedLanguage());
-    const [branch, setBranch] = useState(getSavedBranch());
+    // always read the device's branch fresh: the billing screen can switch it
+    const [, refresh] = useState(0);
+    const branch = getSavedBranch();
     const changeLang = (code) => { saveLanguage(code); setLang(code); };
 
     if (status === 'loading') {
@@ -43,8 +45,26 @@ export default function AuthGate({ children }) {
         );
     }
 
-    if (!branch) {
-        return <BranchSelectModal lang={lang} onSelect={(id) => { saveBranch(id); setBranch(id); }} />;
+    // the device's branch must be one this account may use; with a single allowed branch it is chosen automatically
+    if (branches.length === 0) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-6 bg-gray-100">
+                <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-200 p-6 text-center space-y-4">
+                    <p className="text-gray-700">{ta('noBranchAssigned', lang)}</p>
+                    <button onClick={signOut} className="w-full h-11 rounded-xl bg-gray-800 text-white font-bold flex items-center justify-center gap-2">
+                        <LogOut size={18} /> {ta('signOut', lang)}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+    const usable = branch && branches.includes(branch) ? branch : branches.length === 1 ? branches[0] : null;
+    if (usable !== getSavedBranch()) {
+        // idempotent: keeps the saved device branch in step before any screen reads it
+        if (usable) saveBranch(usable); else clearSavedBranch();
+    }
+    if (!usable) {
+        return <BranchSelectModal lang={lang} branches={branches} onSelect={(id) => { saveBranch(id); refresh(n => n + 1); }} />;
     }
     return children;
 }

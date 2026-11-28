@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Check, ChevronLeft, KeyRound, Loader2, ShieldCheck, Trash2, UserCog } from 'lucide-react';
+import { Check, ChevronLeft, KeyRound, Loader2, ShieldCheck, Store, Trash2, UserCog } from 'lucide-react';
 import { ta } from '../../../i18n/adminExtra';
 import { t } from '../../../i18n/translations';
 import { createUser, deleteUser, setUserPassword, updateUser, userErrorCode } from '../../../services/usersService';
 import PasswordInput from '../../auth/components/PasswordInput';
+import { BRANCH_OPTIONS, branchLabel } from '../../../shared/utils/devicePrefs';
 import {
     PERMISSION_GROUPS,
     PERMISSION_PRESETS,
@@ -46,6 +47,10 @@ export default function UserEditor({ lang, user, currentUserId, onSaved, onDelet
     const [role, setRole] = useState(user?.role || ROLES.STAFF);
     const [permissions, setPermissions] = useState(() => normalizePermissions(user?.permissions || []));
     const [isActive, setIsActive] = useState(user ? user.isActive : true);
+    // branches: empty list = every branch
+    const [branchMode, setBranchMode] = useState(user && user.branches.length ? 'some' : 'all');
+    const [branches, setBranches] = useState(user ? user.branches : []);
+    const toggleBranch = (id) => setBranches(list => (list.includes(id) ? list.filter(b => b !== id) : [...list, id]));
     const [newPassword, setNewPassword] = useState('');
     const [showReset, setShowReset] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -63,6 +68,7 @@ export default function UserEditor({ lang, user, currentUserId, onSaved, onDelet
     const validate = () => {
         if (!USERNAME_RE.test(username.trim().toLowerCase())) return ta('err.invalid_username', lang);
         if (isNew && password.length < 6) return ta('err.weak_password', lang);
+        if (role === ROLES.STAFF && branchMode === 'some' && branches.length === 0) return ta('branchPickOne', lang);
         return '';
     };
 
@@ -76,6 +82,7 @@ export default function UserEditor({ lang, user, currentUserId, onSaved, onDelet
             displayName: displayName.trim(),
             role,
             permissions: role === ROLES.ADMIN ? [] : permissions,
+            branches: role === ROLES.ADMIN || branchMode === 'all' ? [] : BRANCH_OPTIONS.map(b => b.id).filter(id => branches.includes(id)),
             isActive,
         };
         try {
@@ -178,6 +185,36 @@ export default function UserEditor({ lang, user, currentUserId, onSaved, onDelet
                     </div>
                     {isSelf && <p className="text-xs text-gray-500">{ta('cannotChangeOwnRole', lang)}</p>}
                 </section>
+
+                {/* branches (staff only: admins work everywhere) */}
+                {role === ROLES.STAFF && (
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">{ta('secBranches', lang)}</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                            {[['all', 'branchAll'], ['some', 'branchSome']].map(([id, key]) => (
+                                <button
+                                    key={id}
+                                    onClick={() => setBranchMode(id)}
+                                    className={`h-11 rounded-xl border-2 text-sm font-bold ${branchMode === id ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 bg-white text-gray-700'}`}
+                                >
+                                    {ta(key, lang)}
+                                </button>
+                            ))}
+                        </div>
+                        {branchMode === 'some' && (
+                            <div className="rounded-2xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                                {BRANCH_OPTIONS.map(b => (
+                                    <div key={b.id} className="flex items-center gap-3 px-4 py-3">
+                                        <Store size={18} className="text-emerald-600 shrink-0" />
+                                        <p className="flex-1 text-sm font-semibold text-gray-900">{branchLabel(b.id, lang)}</p>
+                                        <Switch on={branches.includes(b.id)} onChange={() => toggleBranch(b.id)} />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <p className="text-xs text-gray-500">{ta('branchHint', lang)}</p>
+                    </section>
+                )}
 
                 {/* permissions (staff only) */}
                 {role === ROLES.STAFF && (

@@ -10,6 +10,7 @@ const normalizeUser = (u) => ({
     displayName: u.display_name || u.username,
     role: u.role,
     permissions: Array.isArray(u.permissions) ? u.permissions : [],
+    branches: Array.isArray(u.branches) ? u.branches : [], // empty = all branches
     isActive: u.is_active !== false,
     createdAt: u.created_at || null,
     lastSignInAt: u.last_sign_in_at || null,
@@ -20,17 +21,18 @@ export async function listUsers() {
     return (rows || []).map(normalizeUser);
 }
 
-export function createUser({ username, password, displayName, role, permissions }) {
+export function createUser({ username, password, displayName, role, permissions, branches }) {
     return run(supabase.rpc('admin_create_user', {
         p_username: username,
         p_password: password,
         p_display_name: displayName,
         p_role: role,
         p_permissions: permissions,
+        p_branches: branches || [],
     }));
 }
 
-export function updateUser(id, { username, displayName, role, permissions, isActive }) {
+export function updateUser(id, { username, displayName, role, permissions, isActive, branches }) {
     return run(supabase.rpc('admin_update_user', {
         p_id: id,
         p_username: username,
@@ -38,6 +40,7 @@ export function updateUser(id, { username, displayName, role, permissions, isAct
         p_role: role,
         p_permissions: permissions,
         p_is_active: isActive,
+        p_branches: branches || [],
     }));
 }
 

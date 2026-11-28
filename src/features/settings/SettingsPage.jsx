@@ -13,7 +13,7 @@ import ChangePasswordModal from './components/ChangePasswordModal';
 /* Settings: full-screen page. Every row is shown only to accounts that may use it
    (the screens behind the rows check the permission again). */
 export default function SettingsPage({ lang, onChangeLang, branch, appMode, onChangeMode, onOpenKitchenSettings, onOpenKds, onOpenMenuManager, onOpenModifiers, onOpenFavorites, onOpenHistory, onOpenDashboard, onOpenPayments, onOpenUsers, onChangeBranch, onClose }) {
-    const { account, can, isAdmin, signOut } = useAuth();
+    const { account, can, isAdmin, signOut, branches } = useAuth();
     const [showPassword, setShowPassword] = useState(false);
 
     // The phone's Back button closes the page (instead of leaving the app). Actions that
@@ -86,7 +86,7 @@ export default function SettingsPage({ lang, onChangeLang, branch, appMode, onCh
                                 <p className="font-bold text-gray-900 truncate">{branchLabel(branch, lang)}</p>
                             </div>
                         </div>
-                        {can(P.SETTINGS_BRANCH) && (
+                        {can(P.SETTINGS_BRANCH) && branches.length > 1 && (
                             <button
                                 onClick={() => leave(onChangeBranch)}
                                 className="w-full h-11 rounded-xl border-2 border-orange-300 text-orange-700 font-bold active:bg-orange-50"

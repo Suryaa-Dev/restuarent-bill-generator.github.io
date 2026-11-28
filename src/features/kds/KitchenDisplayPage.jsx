@@ -74,7 +74,7 @@ function usePortraitPhone() {
 
 /* ---------- the display itself (pure: all data comes in as props) ---------- */
 
-export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItems, onBack, initial, onServe, notify, batches, live = true, onRefresh, account, onSignOut, canManageBatches = true }) {
+export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItems, onBack, initial, onServe, notify, batches, live = true, onRefresh, account, onSignOut }) {
     const kitchen = kitchens.find(k => k.id === kitchenId) || null;
     const config = useMemo(() => normalizeConfig(kitchen?.kdsConfig), [kitchen]);
 
@@ -248,7 +248,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                         {tabs.map(([id, key]) => {
                             const active = tab === id;
                             const n = id === 'table' ? tabCounts.table : id === 'parcel' ? tabCounts.parcel
-                                : id === 'batches' ? (batches ? batches.inProgress.length + batches.recs.length : 0) : 0;
+                                : id === 'batches' ? (batches ? batches.recs.length : 0) : 0;
                             return (
                                 <button
                                     key={id}
@@ -284,7 +284,7 @@ export function KdsView({ lang, kitchens, kitchenId, onKitchen, tokens, menuItem
                     {selected ? (
                         <ItemPage itemKey={selected.key} name={selected.name} lines={lines} menuByKey={menuByKey} now={now} timer={config.timer} lang={lang} onServe={onServe ? serve : undefined} onBack={() => goTab('all')} />
                     ) : tab === 'batches' && batches ? (
-                        <BatchesTab batches={batches} timer={config.timer} lang={lang} readOnly={!canManageBatches} />
+                        <BatchesTab batches={batches} timer={config.timer} lang={lang} />
                     ) : tab === 'all' ? (
                         <AllTab config={config} agg={agg} menuByKey={menuByKey} flags={liveFlags} now={now} lang={lang} onOpen={openItem} />
                     ) : (
@@ -336,11 +336,10 @@ export default function KitchenDisplayPage() {
     const [kitchenId, setKitchenId] = useState(() => localStorage.getItem(KITCHEN_KEY));
     const notify = useKdsNotify({ branch, kitchenId, lang });
 
-    // Batches tab: recommendations + started batches of the selected kitchen
+    // Batches tab: live cooking-order recommendation for the selected kitchen
     const activeKitchen = kitchens.find(k => k.id === kitchenId) || null;
     const kdsCfg = useMemo(() => normalizeConfig(activeKitchen?.kdsConfig), [activeKitchen]);
     const batches = useKdsBatches({
-        branch,
         kitchenId: activeKitchen ? kitchenId : null,
         tokens,
         timer: kdsCfg.timer,
@@ -381,7 +380,6 @@ export default function KitchenDisplayPage() {
             onBack={goBack}
             account={account}
             onSignOut={signOut}
-            canManageBatches={can(P.KDS_BATCHES)}
         />
     );
 }

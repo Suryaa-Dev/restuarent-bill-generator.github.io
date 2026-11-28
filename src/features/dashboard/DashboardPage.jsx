@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { BRANCH_OPTIONS, getSavedBranch } from '../../shared/utils/devicePrefs';
+import { useAuth } from '../auth/AuthProvider';
 import { fetchCompletedBills } from '../../services/reportsService';
 import { fetchMenuItems } from '../../services/menuService';
 import { buildCategoryLookup } from '../menu/utils/menuUtils';
@@ -66,6 +67,7 @@ function BranchComparisonBar({ bills }) {
 }
 
 export default function DashboardPage() {
+  const { branches, allBranches } = useAuth(); // branches this account may see
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [dateRange, setDateRange] = useState('today');
@@ -178,10 +180,10 @@ export default function DashboardPage() {
                 onChange={(e) => setSelectedBranch(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 font-medium"
               >
-                {BRANCH_OPTIONS.map(b => (
+                {BRANCH_OPTIONS.filter(b => branches.includes(b.id)).map(b => (
                   <option key={b.id} value={b.id}>{b.label.en}</option>
                 ))}
-                <option value="all">All Branches (Combined)</option>
+                {allBranches && <option value="all">All Branches (Combined)</option>}
               </select>
 
               <select

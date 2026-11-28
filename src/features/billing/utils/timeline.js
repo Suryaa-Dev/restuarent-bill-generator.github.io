@@ -68,6 +68,7 @@ export function buildTimelineRows({ billId, branch, table, bill, tokens, cleared
                 cart_at: cartAt,
                 sent_at: sentAt,
                 served_at: it.served ? validIso(it.servedAt) : null,
+                ...(tk.etaMinutes ? { eta_minutes: tk.etaMinutes } : {}), // parcel estimate vs. real time
             });
         });
     });

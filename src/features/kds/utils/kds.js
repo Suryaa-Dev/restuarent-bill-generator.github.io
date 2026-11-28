@@ -183,6 +183,16 @@ export function diffEvents(prevTokens, nextTokens, kitchenId) {
         });
     });
 
+    // the same dish going down AND up in one change (plates re-split by new cooking instructions):
+    // the kitchen still has the same amount to cook, so only the real difference counts
+    Object.keys(up).forEach(k => {
+        if (!down[k]) return;
+        const both = Math.min(up[k], down[k]);
+        up[k] -= both; down[k] -= both;
+        if (!up[k]) delete up[k];
+        if (!down[k]) delete down[k];
+    });
+
     return { up, down };
 }
 
