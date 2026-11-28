@@ -17,7 +17,7 @@ const STR = {
         favClear: 'Clear all',
         favClearConfirm: 'Remove all favourites? The Fav tab will go back to showing the most-ordered items.',
         favSaved: 'Changes are saved automatically. The Fav tab shows these items in exactly this order.',
-        favSyncErr: 'Could not sync with the server, so this list is saved on this device only. Run branch_favorites.sql in Supabase and check your connection.',
+        favSyncErr: 'Could not sync with the server, so this list is saved on this device only for now. Check your connection.',
     },
     mr: {
         favTitle: 'आवडते (Favourites)',
@@ -36,7 +36,7 @@ const STR = {
         favClear: 'सर्व काढा',
         favClearConfirm: 'सर्व आवडते काढायचे? Fav टॅब पुन्हा सर्वाधिक ऑर्डर होणारे पदार्थ दाखवेल.',
         favSaved: 'बदल आपोआप सेव्ह होतात. Fav टॅबमध्ये हे पदार्थ अगदी याच क्रमाने दिसतात.',
-        favSyncErr: 'सर्व्हरशी सिंक झाले नाही, त्यामुळे ही यादी फक्त या डिव्हाइसवर सेव्ह आहे. Supabase मध्ये branch_favorites.sql चालवा आणि कनेक्शन तपासा.',
+        favSyncErr: 'सर्व्हरशी सिंक झाले नाही, त्यामुळे ही यादी सध्या फक्त या डिव्हाइसवर सेव्ह आहे. कनेक्शन तपासा.',
     },
 };
 export const tf = (key, lang) => (STR[lang] || STR.en)[key] ?? STR.en[key] ?? key;

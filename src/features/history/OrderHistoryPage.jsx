@@ -1,0 +1,574 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, X, Search, Calendar, IndianRupee, RefreshCw, ShoppingBag, Trash2, CheckSquare, Square, Check, Loader2, Info } from 'lucide-react';
+import { getSavedBranch, branchLabel, getSavedLanguage } from '../../shared/utils/devicePrefs';
+import { translateItemName, translatePortion } from '../../i18n/translations';
+import { ts } from '../../i18n/serveExtra';
+import ServiceTimeModal from '../billing/components/tokens/ServiceTimeModal';
+import { mergeLines } from '../billing/utils/customize';
+import { resolveRange, formatISTDateLabel, formatISTTime } from '../../shared/utils/time';
+import { deleteCompletedBills, fetchBillTimeline, fetchCompletedBills } from '../../services/reportsService';
+import { useAuth } from '../auth/AuthProvider';
+import { PERMISSIONS as P } from '../auth/permissions';
+
+const PAGE_SIZE = 100; // rows rendered at a time (everything is still fetched, just shown in chunks)
+const formatDateLabel = formatISTDateLabel;
+const formatTimeLabel = formatISTTime;
+
+// A table can have dine-in AND parcel food on one bill. Kitchen-mode lines carry isParcel;
+// older / Normal-mode bills only have the bill-level is_parcel flag.
+//   'parcel' = every line parcel, 'mixed' = both kinds, 'dinein' = no parcel line
+function billKind(bill) {
+    const items = bill.items || [];
+    const parcelLines = items.filter(i => i.isParcel).length;
+    if (items.length > 0 && parcelLines === items.length) return 'parcel';
+    if (parcelLines > 0) return 'mixed';
+    return bill.is_parcel ? 'parcel' : 'dinein';
+}
+const lineTotal = (list) => list.reduce((sum, i) => sum + (Number(i.price) || 0) * (Number(i.qty) || 0), 0);
+
+const KindChips = ({ kind, className = '' }) => (
+    <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
+        {kind !== 'parcel' && (
+            <span className="inline-flex items-center bg-orange-100 text-orange-700 text-[11px] font-semibold rounded-full px-2 py-0.5">Dine-in</span>
+        )}
+        {kind !== 'dinein' && (
+            <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 text-[11px] font-semibold rounded-full px-2 py-0.5">
+                <ShoppingBag size={10} /> Parcel
+            </span>
+        )}
+    </span>
+);
+
+export default function OrderHistoryPage() {
+    const { can } = useAuth();
+    const canDelete = can(P.HISTORY_DELETE); // deleting bills is a separate permission
+    const navigate = useNavigate();
+    const branch = getSavedBranch();
+    const lang = getSavedLanguage();
+
+    const [bills, setBills] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedBill, setSelectedBill] = useState(null);
+    const [timeModal, setTimeModal] = useState(null); // { loading } | { rows, table } | { error }
+
+    // service times of a cleared bill (written to item_timeline when the bill was cleared)
+    const openTimes = async (bill) => {
+        setTimeModal({ loading: true });
+        try {
+            const rows = await fetchBillTimeline(bill.id);
+            setTimeModal({ rows, table: bill.table_number });
+        } catch (err) {
+            console.error('Loading service times failed:', err);
+            setTimeModal({ error: true });
+        }
+    };
+
+    const [dateRange, setDateRange] = useState('today');
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
+    const [minAmount, setMinAmount] = useState('');
+    const [maxAmount, setMaxAmount] = useState('');
+    const [tableFilter, setTableFilter] = useState('');
+    const [typeFilter, setTypeFilter] = useState('all'); // all | dinein | parcel | mixed (dine-in + parcel on one bill)
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+    const [showFilters, setShowFilters] = useState(false);
+
+    // deleting unwanted bills (so they drop out of history AND every report)
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState(() => new Set());
+    const [confirmDelete, setConfirmDelete] = useState(null); // { ids, count, total }
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
+    const [notice, setNotice] = useState('');
+
+    useEffect(() => {
+        fetchBills();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dateRange, customStartDate, customEndDate]);
+
+    const fetchBills = async () => {
+        try {
+            setLoading(true);
+            setVisibleCount(PAGE_SIZE);
+            const range = resolveRange(dateRange, customStartDate, customEndDate);
+            if (dateRange === 'custom' && !range) { setBills([]); return; } // waiting for both dates
+
+            // paginated, so "All Time" / long ranges are never cut off at Supabase's 1000-row cap
+            const rows = await fetchCompletedBills({ range, branch });
+            setBills(rows);
+        } catch (err) {
+            console.error('Error loading order history:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const filteredBills = useMemo(() => {
+        return bills.filter(bill => {
+            if (minAmount !== '' && bill.total < parseFloat(minAmount)) return false;
+            if (maxAmount !== '' && bill.total > parseFloat(maxAmount)) return false;
+            if (tableFilter !== '' && String(bill.table_number) !== tableFilter.trim()) return false;
+            if (typeFilter !== 'all' && billKind(bill) !== typeFilter) return false;
+            return true;
+        });
+    }, [bills, minAmount, maxAmount, tableFilter, typeFilter]);
+
+    const activeFilterCount =
+        (dateRange !== 'today' ? 1 : 0) +
+        (minAmount !== '' ? 1 : 0) +
+        (maxAmount !== '' ? 1 : 0) +
+        (tableFilter !== '' ? 1 : 0) +
+        (typeFilter !== 'all' ? 1 : 0);
+
+    const clearFilters = () => {
+        setDateRange('today');
+        setCustomStartDate('');
+        setCustomEndDate('');
+        setMinAmount('');
+        setMaxAmount('');
+        setTableFilter('');
+        setTypeFilter('all');
+    };
+
+    const itemsPreview = (bill) => {
+        const names = (bill.items || []).map(i => translateItemName(i.name, lang));
+        if (names.length === 0) return '';
+        const shown = names.slice(0, 2).join(', ');
+        return names.length > 2 ? `${shown} +${names.length - 2}` : shown;
+    };
+
+    // ---- selecting / deleting ----
+    const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
+    const toggleSelected = (id) => setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+    });
+    const allShownSelected = filteredBills.length > 0 && filteredBills.every(b => selectedIds.has(b.id));
+    const toggleSelectAll = () => setSelectedIds(allShownSelected ? new Set() : new Set(filteredBills.map(b => b.id)));
+    const selectedTotal = filteredBills.filter(b => selectedIds.has(b.id)).reduce((s, b) => s + (Number(b.total) || 0), 0);
+
+    const askDelete = (billList) => {
+        setDeleteError('');
+        setConfirmDelete({
+            ids: billList.map(b => b.id),
+            count: billList.length,
+            total: billList.reduce((s, b) => s + (Number(b.total) || 0), 0),
+        });
+    };
+
+    const runDelete = async () => {
+        if (!confirmDelete || !canDelete) return;
+        setDeleting(true);
+        setDeleteError('');
+        try {
+            const deleted = await deleteCompletedBills(confirmDelete.ids, branch);
+            // a blocked delete (database permissions) removes nothing and returns no error
+            if (deleted.size === 0) throw new Error('nothing-deleted');
+
+            setBills(prev => prev.filter(b => !deleted.has(b.id)));
+            setSelectedBill(null);
+            setSelectedIds(new Set());
+            setSelectMode(false);
+            setConfirmDelete(null);
+            const n = deleted.size;
+            const partial = n < confirmDelete.count ? ` (${confirmDelete.count - n} could not be deleted)` : '';
+            setNotice(`${n} bill${n === 1 ? '' : 's'} deleted${partial}`);
+            setTimeout(() => setNotice(''), 4000);
+        } catch (err) {
+            console.error('Error deleting bills:', err);
+            setDeleteError(err.message === 'nothing-deleted'
+                ? 'You do not have permission to delete these bills.'
+                : 'Could not delete. Check your connection and try again.');
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    return (
+        <div className={`min-h-screen bg-gray-50 ${selectMode ? 'pb-28' : ''}`}>
+            {/* Header */}
+            <header className="sticky top-0 z-30 bg-orange-500 text-white px-4 py-3 shadow-lg">
+                <div className="flex items-center justify-between max-w-3xl mx-auto">
+                    <div className="flex items-center gap-3">
+                        <button onClick={() => navigate('/')} className="p-1 -ml-1">
+                            <ArrowLeft size={22} />
+                        </button>
+                        <div>
+                            <h1 className="text-lg font-bold leading-tight">Order History</h1>
+                            <p className="text-xs text-orange-100">{branchLabel(branch, lang)}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {selectMode ? (
+                            <button onClick={exitSelectMode} className="px-3 py-2 bg-orange-600 rounded-full text-sm font-semibold flex items-center gap-1">
+                                <X size={16} /> Cancel
+                            </button>
+                        ) : (
+                            <>
+                                {canDelete && (
+                                <button
+                                    onClick={() => setSelectMode(true)}
+                                    disabled={filteredBills.length === 0}
+                                    className="px-3 py-2 bg-orange-600 rounded-full text-sm font-semibold flex items-center gap-1 disabled:opacity-50"
+                                >
+                                    <CheckSquare size={16} /> Select
+                                </button>
+                                )}
+                                <button onClick={fetchBills} className="p-2 bg-orange-600 rounded-full" aria-label="Refresh">
+                                    <RefreshCw size={18} />
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            <div className="max-w-3xl mx-auto p-4">
+                {/* Quick date pills */}
+                <div className="flex gap-2 overflow-x-auto pb-1 mb-3">
+                    {[
+                        { id: 'today', label: 'Today' },
+                        { id: 'yesterday', label: 'Yesterday' },
+                        { id: 'last7days', label: 'Last 7 Days' },
+                        { id: 'last30days', label: 'Last 30 Days' },
+                        { id: 'all', label: 'All Time' },
+                    ].map(preset => (
+                        <button
+                            key={preset.id}
+                            onClick={() => setDateRange(preset.id)}
+                            className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-semibold ${dateRange === preset.id
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-white text-gray-600 border border-gray-200'
+                                }`}
+                        >
+                            {preset.label}
+                        </button>
+                    ))}
+                    <button
+                        onClick={() => setShowFilters(s => !s)}
+                        className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-semibold flex items-center gap-1 border ${activeFilterCount > 0 || showFilters
+                            ? 'bg-orange-100 text-orange-700 border-orange-300'
+                            : 'bg-white text-gray-600 border-gray-200'
+                            }`}
+                    >
+                        <Search size={14} />
+                        Filters
+                        {activeFilterCount > 0 && (
+                            <span className="bg-orange-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
+                                {activeFilterCount}
+                            </span>
+                        )}
+                    </button>
+                </div>
+
+                {/* Expandable filter panel */}
+                {showFilters && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 space-y-4">
+                        <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 flex items-center gap-1">
+                                <Calendar size={12} /> Custom Date Range
+                            </label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="date"
+                                    value={customStartDate}
+                                    onChange={(e) => { setCustomStartDate(e.target.value); setDateRange('custom'); }}
+                                    className="flex-1 border rounded-lg px-2 py-2 text-sm"
+                                />
+                                <input
+                                    type="date"
+                                    value={customEndDate}
+                                    onChange={(e) => { setCustomEndDate(e.target.value); setDateRange('custom'); }}
+                                    className="flex-1 border rounded-lg px-2 py-2 text-sm"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 flex items-center gap-1">
+                                <IndianRupee size={12} /> Amount Range
+                            </label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="number"
+                                    placeholder="Min ₹"
+                                    value={minAmount}
+                                    onChange={(e) => setMinAmount(e.target.value)}
+                                    className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="Max ₹"
+                                    value={maxAmount}
+                                    onChange={(e) => setMaxAmount(e.target.value)}
+                                    className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">Order Type</label>
+                            <div className="flex gap-2">
+                                {[['all', 'All'], ['dinein', 'Dine-in'], ['parcel', 'Parcel'], ['mixed', 'Both']].map(([id, label]) => (
+                                    <button
+                                        key={id}
+                                        onClick={() => setTypeFilter(id)}
+                                        className={`flex-1 py-2 rounded-lg text-sm font-semibold border ${typeFilter === id
+                                            ? (id === 'parcel' ? 'bg-purple-600 text-white border-purple-600' : id === 'mixed' ? 'bg-gradient-to-r from-orange-500 to-purple-600 text-white border-transparent' : 'bg-orange-500 text-white border-orange-500')
+                                            : 'bg-white text-gray-600 border-gray-200'}`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-semibold text-gray-500 mb-1 block">Table Number</label>
+                            <input
+                                type="number"
+                                placeholder="e.g. 5"
+                                value={tableFilter}
+                                onChange={(e) => setTableFilter(e.target.value)}
+                                className="w-full border rounded-lg px-3 py-2 text-sm"
+                            />
+                        </div>
+
+                        {activeFilterCount > 0 && (
+                            <button onClick={clearFilters} className="text-sm font-semibold text-orange-600">
+                                Clear all filters
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Results */}
+                {loading ? (
+                    <div className="text-center py-16 text-gray-400">Loading...</div>
+                ) : filteredBills.length === 0 ? (
+                    <div className="text-center py-16 text-gray-400">
+                        <p className="font-medium">No bills found</p>
+                        <p className="text-sm mt-1">Try a different date range or filter.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        <p className="text-xs text-gray-400 px-1">
+                            {filteredBills.length} bill{filteredBills.length === 1 ? '' : 's'}
+                        </p>
+                        {filteredBills.slice(0, visibleCount).map(bill => {
+                            const picked = selectedIds.has(bill.id);
+                            return (
+                                <button
+                                    key={bill.id}
+                                    onClick={() => (selectMode ? toggleSelected(bill.id) : setSelectedBill(bill))}
+                                    className={`w-full bg-white rounded-xl border p-4 flex items-center justify-between gap-3 text-left active:bg-gray-50 ${picked ? 'border-orange-400 ring-1 ring-orange-300' : 'border-gray-200'}`}
+                                >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        {selectMode ? (
+                                            <span className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${picked ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-300'}`}>
+                                                {picked ? <Check size={22} /> : <Square size={20} />}
+                                            </span>
+                                        ) : (
+                                            <div className="w-11 h-11 rounded-full bg-orange-100 text-orange-700 font-bold flex items-center justify-center text-sm shrink-0">
+                                                T{bill.table_number}
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <p className="font-semibold text-gray-800">
+                                                {selectMode && <span className="text-orange-600 mr-1">T{bill.table_number} ·</span>}
+                                                {formatDateLabel(bill.completed_at)} · {formatTimeLabel(bill.completed_at)}
+                                            </p>
+                                            <p className="text-xs text-gray-500 truncate">
+                                                {(bill.items || []).length} item{(bill.items || []).length === 1 ? '' : 's'}
+                                                {itemsPreview(bill) && <span className="text-gray-400"> · {itemsPreview(bill)}</span>}
+                                            </p>
+                                            <KindChips kind={billKind(bill)} className="mt-1" />
+                                        </div>
+                                    </div>
+                                    <p className="text-lg font-bold text-orange-600 shrink-0">₹{bill.total}</p>
+                                </button>
+                            );
+                        })}
+
+                        {filteredBills.length > visibleCount && (
+                            <button
+                                onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                                className="w-full py-3 rounded-xl bg-white border border-gray-200 text-orange-600 font-semibold"
+                            >
+                                Show more ({filteredBills.length - visibleCount} remaining)
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Detail modal */}
+            {selectedBill && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center">
+                    <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl max-h-[85vh] flex flex-col">
+                        <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+                            <div>
+                                <h2 className="text-lg font-bold flex items-center gap-2">
+                                    Table {selectedBill.table_number}
+                                    <button
+                                        onClick={() => openTimes(selectedBill)}
+                                        aria-label={ts('serviceTimes', lang)}
+                                        className="p-1.5 rounded-full bg-blue-50 text-blue-600 active:bg-blue-100"
+                                    >
+                                        {timeModal?.loading ? <Loader2 size={18} className="animate-spin" /> : <Info size={18} />}
+                                    </button>
+                                </h2>
+                                <KindChips kind={billKind(selectedBill)} className="mt-1" />
+                                <p className="text-xs text-gray-500">
+                                    {formatDateLabel(selectedBill.completed_at)} · {formatTimeLabel(selectedBill.completed_at)}
+                                </p>
+                            </div>
+                            <button onClick={() => setSelectedBill(null)}><X size={22} /></button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {(() => {
+                                const all = mergeLines(selectedBill.items || []);
+                                const kind = billKind(selectedBill);
+                                const isP = (i) => (kind === 'parcel' ? true : kind === 'mixed' ? !!i.isParcel : false);
+                                const sections = kind === 'mixed'
+                                    ? [
+                                        { key: 'dine', title: 'Dine-in', list: all.filter(i => !isP(i)), box: 'bg-orange-50 text-orange-700' },
+                                        { key: 'parcel', title: 'Parcel', list: all.filter(isP), box: 'bg-purple-50 text-purple-700' },
+                                    ]
+                                    : [{ key: 'all', title: null, list: all }];
+                                return sections.map(sec => (
+                                    <div key={sec.key} className={sec.title ? 'mb-4' : ''}>
+                                        {sec.title && (
+                                            <div className={`flex items-center justify-between rounded-lg px-3 py-1.5 mb-1 text-xs font-bold uppercase tracking-wide ${sec.box}`}>
+                                                <span className="flex items-center gap-1">{sec.key === 'parcel' && <ShoppingBag size={12} />} {sec.title}</span>
+                                                <span>₹{lineTotal(sec.list)}</span>
+                                            </div>
+                                        )}
+                                        {sec.list.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-100">
+                                                <div>
+                                                    <p className="font-medium text-sm">
+                                                        <span className="text-gray-400 mr-1">{idx + 1}.</span>
+                                                        {translateItemName(item.name, lang)}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500">
+                                                        {translatePortion(item.portion, lang)} · ₹{item.price} each · x{item.qty}
+                                                    </p>
+                                                </div>
+                                                <p className="font-semibold text-gray-800">₹{item.price * item.qty}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+
+                        <div className="border-t p-4 space-y-3">
+                            <div className="flex justify-between font-bold text-lg">
+                                <span>Total</span>
+                                <span className="text-orange-600">₹{selectedBill.total}</span>
+                            </div>
+                            {canDelete && (
+                            <button
+                                onClick={() => askDelete([selectedBill])}
+                                className="w-full h-11 rounded-xl border-2 border-red-200 text-red-600 font-bold flex items-center justify-center gap-2 active:bg-red-50"
+                            >
+                                <Trash2 size={18} /> Delete this bill
+                            </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* service times of the open bill (same sheet as the cart drawer's "i") */}
+            {timeModal?.rows && (
+                <ServiceTimeModal
+                    table={timeModal.table}
+                    history={timeModal.rows}
+                    lang={lang}
+                    onClose={() => setTimeModal(null)}
+                />
+            )}
+            {timeModal?.error && (
+                <div className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-6" onClick={() => setTimeModal(null)}>
+                    <div className="bg-white rounded-2xl p-5 max-w-sm text-sm text-gray-700 space-y-3" onClick={e => e.stopPropagation()}>
+                        <p>Could not load the service times. Check your connection, then try again.</p>
+                        <button onClick={() => setTimeModal(null)} className="w-full h-11 rounded-xl bg-gray-100 font-bold">OK</button>
+                    </div>
+                </div>
+            )}
+
+            {/* select mode: bottom action bar */}
+            {selectMode && (
+                <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+                    <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+                        <button onClick={toggleSelectAll} className="flex items-center gap-2 text-sm font-semibold text-gray-700 shrink-0">
+                            {allShownSelected ? <CheckSquare size={20} className="text-orange-500" /> : <Square size={20} className="text-gray-400" />}
+                            All
+                        </button>
+                        <p className="flex-1 min-w-0 text-sm text-gray-600 truncate">
+                            <span className="font-bold text-gray-900">{selectedIds.size}</span> selected
+                            {selectedIds.size > 0 && <span> · ₹{selectedTotal}</span>}
+                        </p>
+                        <button
+                            onClick={() => askDelete(filteredBills.filter(b => selectedIds.has(b.id)))}
+                            disabled={selectedIds.size === 0}
+                            className="h-11 px-5 rounded-xl bg-red-600 text-white font-bold flex items-center gap-2 disabled:opacity-40 active:bg-red-700"
+                        >
+                            <Trash2 size={18} /> Delete
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* confirm delete */}
+            {confirmDelete && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-end md:items-center justify-center">
+                    <div className="bg-white w-full md:w-96 rounded-t-2xl md:rounded-2xl p-5 space-y-4">
+                        <div className="flex items-start gap-3">
+                            <span className="w-11 h-11 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0"><Trash2 size={22} /></span>
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900">
+                                    Delete {confirmDelete.count} bill{confirmDelete.count === 1 ? '' : 's'}?
+                                </h2>
+                                <p className="text-sm text-gray-600 mt-0.5">
+                                    Worth <span className="font-bold text-gray-900">₹{confirmDelete.total}</span>. They will be removed from order history and from all reports, and this cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+                        {deleteError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{deleteError}</p>}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setConfirmDelete(null); setDeleteError(''); }}
+                                disabled={deleting}
+                                className="flex-1 h-12 rounded-xl bg-gray-100 text-gray-700 font-bold"
+                            >
+                                Keep
+                            </button>
+                            <button
+                                onClick={runDelete}
+                                disabled={deleting}
+                                className="flex-1 h-12 rounded-xl bg-red-600 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+                            >
+                                {deleting && <Loader2 size={18} className="animate-spin" />} Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* result message */}
+            {notice && (
+                <div className="fixed top-20 inset-x-0 z-[70] flex justify-center px-4 pointer-events-none">
+                    <div className="bg-gray-900 text-white text-sm font-semibold rounded-full px-5 py-3 shadow-lg flex items-center gap-2">
+                        <Check size={16} className="text-green-400" /> {notice}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
